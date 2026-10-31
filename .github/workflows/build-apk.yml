@@ -48,6 +48,28 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends gpgv xz-utils unzip
 
+      # 固定签名密钥：装在手机上的包只有签名一致才能覆盖升级。没配 secret 时退回 debug 签名
+      # （每次 runner 生成不同密钥，换个包就得先卸载）。
+      #   仓库 Settings → Secrets and variables → Actions 里加四个：
+      #   ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD
+      - name: 恢复签名密钥
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KS_KEYPASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          printf '%s' "$KS_B64" | base64 -d > "$RUNNER_TEMP/dsh-signing.keystore"
+          {
+            echo "storeFile=$RUNNER_TEMP/dsh-signing.keystore"
+            echo "storePassword=$KS_PASS"
+            echo "keyAlias=$KS_ALIAS"
+            echo "keyPassword=$KS_KEYPASS"
+          } > app/android/key.properties
+          echo "签名密钥已就位："
+          keytool -list -keystore "$RUNNER_TEMP/dsh-signing.keystore" -storepass "$KS_PASS" | tail -3
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -130,6 +152,14 @@ jobs:
         env:
           ORG_GRADLE_PROJECT_dshAppId: ${{ inputs.app_id }}
         run: tooling/build-apk.sh -f ${{ inputs.flavor }}
+
+      - name: 确认签名证书
+        if: always()
+        run: |
+          apk=$(find app/build/app/outputs/flutter-apk -name '*.apk' | head -1)
+          [ -n "$apk" ] || exit 0
+          AS="$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools" -name apksigner -type f | sort | tail -1)"
+          "$AS" verify --print-certs "$apk" | grep -i "SHA-256" | head -2 || true
 
       - name: 报告包名与产物
         if: always()
