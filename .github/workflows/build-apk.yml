@@ -1,0 +1,104 @@
+name: build-apk
+
+# 手动触发：Actions → build-apk → Run workflow。
+# 在 x86_64 runner 上装工具链、生成 runtime/out、出 arm64 APK，产物在 Artifacts。
+on:
+  workflow_dispatch:
+    inputs:
+      app_id:
+        description: "安装包名（留空＝官方名 io.github.ccch1mneyyy.dsh_app）"
+        required: false
+        default: "io.github.ccch1mneyyy.dshgo.local"
+      flavor:
+        description: "架构"
+        type: choice
+        options: [arm64, x64]
+        default: arm64
+
+concurrency:
+  group: build-apk-${{ github.ref }}-${{ inputs.flavor }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 本地补丁：把 .patch 放到仓库根目录即可，不需要先提交改动。
+      - name: 应用本地补丁（可选）
+        run: |
+          shopt -s nullglob
+          for p in *.patch patches/local-*.patch; do
+            echo "applying $p"
+            git apply --verbose "$p"
+          done
+
+      # runtime/out 与 Gradle 都需要空间；runner 自带的一堆 SDK 用不上。
+      - name: 腾出磁盘
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android/sdk/ndk/* || true
+          df -h /
+
+      - name: 宿主依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gpgv xz-utils unzip
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      # 版本必须与 tooling/setup-toolchain.sh 里钉的 FLUTTER_VERSION 一致。
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.7"
+          channel: stable
+          cache: true
+
+      - uses: android-actions/setup-android@v3
+
+      - name: 接受 Android SDK 许可
+        run: yes | sdkmanager --licenses > /dev/null || true
+
+      # 下载缓存（Ubuntu base、Node、DSH npm 树）：命中时省几分钟，不命中也能跑。
+      - name: 缓存运行时下载
+        uses: actions/cache@v4
+        with:
+          path: runtime/.cache
+          key: runtime-cache-${{ hashFiles('runtime/build-runtime.sh', 'runtime/patches/pins.json') }}
+
+      # runtime/build-runtime.sh 默认从清华镜像和 npmmirror 拉 Ubuntu base / Node / npm 树。
+      # Azure runner 上如果慢到超时，把它里的 UBUNTU_MIRROR、NODE_MIRROR、NPM_REGISTRY、
+      # PBS_MIRROR 换成官方源（archive.ubuntu.com、nodejs.org、registry.npmjs.org）再跑。
+      - name: 生成 Linux 运行时（最慢的一步）
+        run: runtime/build-runtime.sh ${{ inputs.flavor }}
+
+      - name: flutter pub get
+        working-directory: app
+        run: flutter pub get
+
+      - name: 构建 APK
+        env:
+          ORG_GRADLE_PROJECT_dshAppId: ${{ inputs.app_id }}
+        run: tooling/build-apk.sh -f ${{ inputs.flavor }}
+
+      - name: 报告包名与产物
+        if: always()
+        run: |
+          ls -lh app/build/app/outputs/flutter-apk/ 2>/dev/null || true
+          ls -lh dist/ 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dsh-go-${{ inputs.flavor }}-apk
+          path: |
+            app/build/app/outputs/flutter-apk/*.apk
+            dist/*.apk
+          if-no-files-found: error
+          retention-days: 14
