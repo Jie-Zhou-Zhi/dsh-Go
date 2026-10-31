@@ -2,10 +2,7 @@
 <!-- Long-press on the launcher icon: 新对话 and 语音输入 (static), then up to three recent
      conversations (dynamic, shortcuts/ShortcutsPlugin.kt). All go through the non-exported
      shortcuts/EntryActivity; launchers start shortcuts as this app, so it needs no export.
-     targetPackage is the applicationId, which a local build can override
-     (build.gradle.kts, -PdshAppId=…): this file is the template that build.gradle.kts
-     copies into the generated res dir with the installed id substituted, so it is no
-     longer under res/ itself. -->
+     targetPackage is the applicationId (no build-type suffix today; add one and this breaks). -->
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
     <shortcut
         android:shortcutId="new_chat"
