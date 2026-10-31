@@ -8,7 +8,7 @@ import io.github.ccch1mneyyy.dsh_app.MainActivity
 import io.github.ccch1mneyyy.dsh_app.pet.PetOverlay
 
 /**
- * Where the launcher shortcuts (res/xml/shortcuts.xml and the recent conversations) and the
+ * Where the launcher shortcuts (shortcuts/shortcuts.xml (build.gradle.kts) and the recent conversations) and the
  * Quick Settings tile point: hands the entry to the app's own task as
  * [ShortcutsPlugin.ACTION_ENTRY], stamped with [ShortcutsPlugin.token].
  *
