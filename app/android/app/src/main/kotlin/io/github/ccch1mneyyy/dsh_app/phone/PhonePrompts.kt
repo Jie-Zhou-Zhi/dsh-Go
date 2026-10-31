@@ -23,7 +23,8 @@ class PhonePrompts(
     private val nativeOwner = Any()
     private var activityOwner: Any? = null
     private var activity: Activity? = null
-    private var display: Pair<PromptTicket, () -> Unit>? = null
+    /** Every open presentation of the current ticket: the notification and/or the overlay card. */
+    private val displays = mutableListOf<Pair<PromptTicket, () -> Unit>>()
 
     fun attachActivity(owner: Any, next: Activity?) {
         if (next == null && activityOwner !== owner) return
@@ -101,7 +102,7 @@ class PhonePrompts(
     }
 
     override fun close(ifCurrent: (() -> Unit) -> Unit) {
-        onMain { ifCurrent { arbiter.stopAll(); clearDisplay(); status(null) } }
+        onMain { ifCurrent { arbiter.stopAll(); closeDisplays(); status(null) } }
     }
 
     private fun schedule(ticket: PromptTicket) {
@@ -114,27 +115,30 @@ class PhonePrompts(
         ticket.onFinished {
             onMain {
                 main.removeCallbacks(tick)
-                if (display?.first === ticket) clearDisplay()
+                closeDisplays(ticket)
             }
         }
         onMain {
             if (!ticket.live) return@onMain
             tick.run()
+            // Notification and overlay are two equal ways to answer the same question: post both
+            // and let the first answer resolve the ticket. The other one closes itself.
+            var presented = false
+            if (notifications.available()) presented = add(ticket, PromptSurface.NOTIFICATION, notifications::showPrompt)
             val overlay = PhoneRegistry.overlayGate as? PhonePromptPresenter
-            if (overlay != null && show(ticket, PromptSurface.OVERLAY, overlay::showPrompt)) return@onMain
-            if (show(ticket, PromptSurface.NOTIFICATION, notifications::showPrompt)) return@onMain
-            showApp(ticket)
+            if (overlay != null) presented = add(ticket, PromptSurface.OVERLAY, overlay::showPrompt) || presented
+            if (!presented) showApp(ticket)
         }
     }
 
-    private fun show(ticket: PromptTicket, surface: PromptSurface, presenter: (PromptPresentation) -> (() -> Unit)?): Boolean {
+    /** Adds one presentation without closing the others: a ticket may be answerable two ways. */
+    private fun add(ticket: PromptTicket, surface: PromptSurface, presenter: (PromptPresentation) -> (() -> Unit)?): Boolean {
         if (!ticket.live) return false
-        clearDisplay()
         val p = ticket.attempt(surface) ?: return false
         val handle = runCatching { presenter(p) }.getOrNull()
         if (handle == null) { p.retire(); return false }
         if (!p.live) { handle(); return false }
-        display = ticket to handle
+        displays += ticket to handle
         return true
     }
 
@@ -142,7 +146,7 @@ class PhonePrompts(
         if (!ticket.live) return
         val host = activity
         if (host != null && appResumed()) {
-            if (!show(ticket, PromptSurface.APP) { PhonePromptUi.showDialog(host, it) }) ticket.unavailable()
+            if (!add(ticket, PromptSurface.APP) { PhonePromptUi.showDialog(host, it) }) ticket.unavailable()
             return
         }
         if (!alreadyLaunching && !reopen(ticket.content.sessionId, ticket.content.host)) {
@@ -154,7 +158,7 @@ class PhonePrompts(
                 if (!ticket.live) return
                 val next = activity
                 if (next != null && appResumed()) {
-                    if (!show(ticket, PromptSurface.APP) { PhonePromptUi.showDialog(next, it) }) ticket.unavailable()
+                    if (!add(ticket, PromptSurface.APP) { PhonePromptUi.showDialog(next, it) }) ticket.unavailable()
                 } else if (SystemClock.elapsedRealtime() >= deadline) ticket.unavailable()
                 else main.postDelayed(this, 100)
             }
@@ -173,25 +177,27 @@ class PhonePrompts(
         if (ticket.content.kind == PromptKind.REVIEW) p.choose(PromptChoice.OPEN)
         else {
             p.retire()
-            clearDisplay()
+            closeDisplays()
             showApp(ticket, alreadyLaunching = true)
         }
         return true
     }
 
-    private fun clearDisplay() {
-        val old = display
-        display = null
-        old?.second?.let { runCatching { it() } }
+    /** Closes the presentations of one ticket, or all of them, without ending the ticket. */
+    private fun closeDisplays(ticket: PromptTicket? = null) {
+        if (displays.isEmpty()) return
+        val closing = if (ticket == null) displays.toList() else displays.filter { it.first === ticket }
+        if (closing.isEmpty()) return
+        displays.removeAll { d -> closing.any { it === d } }
+        closing.forEach { (_, handle) -> runCatching { handle() } }
     }
 
     private fun onMain(block: () -> Unit) {
         if (Looper.myLooper() == Looper.getMainLooper()) block() else main.post(block)
     }
 
-    private fun PromptTicket.presentationSurfaceIsApp(): Boolean = display?.let { (t, _) ->
-        t === this && finalPresentationSurface() == PromptSurface.APP
-    } == true
+    private fun PromptTicket.presentationSurfaceIsApp(): Boolean =
+        displays.any { it.first === this } && finalPresentationSurface() == PromptSurface.APP
 
     companion object {
         private const val ACTION_OPEN = "io.github.ccch1mneyyy.dsh_app.phone.OPEN_PROMPT"
