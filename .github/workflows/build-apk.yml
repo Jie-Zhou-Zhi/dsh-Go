@@ -84,6 +84,30 @@ jobs:
           path: runtime/.cache
           key: runtime-cache-${{ hashFiles('runtime/build-runtime.sh', 'runtime/patches/pins.json') }}
 
+      # Termux 会把旧构建从索引里删掉（proot 5.1.107.98 已经没了）。构建脚本本来就要读这份
+      # 索引并核对 deb 的 sha256，所以这里直接从索引取当前版本，钉死的默认值只作兜底。
+      - name: 解析 Termux 包版本
+        run: |
+          case "${{ inputs.flavor }}" in
+            arm64) arch=aarch64 ;;
+            x64) arch=x86_64 ;;
+            *) echo "unknown flavor"; exit 1 ;;
+          esac
+          idx="$(mktemp)"
+          curl -fsSL --retry 3 --max-time 120 \
+            "https://packages.termux.dev/apt/termux-main/dists/stable/main/binary-$arch/Packages" -o "$idx"
+          for pkg in proot libtalloc libandroid-shmem; do
+            ver="$(awk -v RS= -v p="$pkg" '$0 ~ "(^|\n)Package: " p "\n" {print}' "$idx" | sed -n 's/^Version: //p' | sort -V | tail -1)"
+            if [ -z "$ver" ]; then echo "no version for $pkg in the index"; exit 1; fi
+            case "$pkg" in
+              proot) name=PROOT_VERSION ;;
+              libtalloc) name=TALLOC_VERSION ;;
+              libandroid-shmem) name=SHMEM_VERSION ;;
+            esac
+            echo "$name=$ver" >> "$GITHUB_ENV"
+            echo "$pkg = $ver"
+          done
+
       # runtime/build-runtime.sh 默认从清华镜像和 npmmirror 拉 Ubuntu base / Node / npm 树。
       # Azure runner 上如果慢到超时，把它里的 UBUNTU_MIRROR、NODE_MIRROR、NPM_REGISTRY、
       # PBS_MIRROR 换成官方源（archive.ubuntu.com、nodejs.org、registry.npmjs.org）再跑。
