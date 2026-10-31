@@ -88,7 +88,15 @@ jobs:
       # Azure runner 上如果慢到超时，把它里的 UBUNTU_MIRROR、NODE_MIRROR、NPM_REGISTRY、
       # PBS_MIRROR 换成官方源（archive.ubuntu.com、nodejs.org、registry.npmjs.org）再跑。
       - name: 生成 Linux 运行时（最慢的一步）
-        run: runtime/build-runtime.sh ${{ inputs.flavor }}
+        run: |
+          # build-runtime.sh 认的是 ABI 名（arm64-v8a / x86_64），不是 flavor 名。
+          case "${{ inputs.flavor }}" in
+            arm64) abi=arm64-v8a ;;
+            x64) abi=x86_64 ;;
+            *) echo "unknown flavor: ${{ inputs.flavor }}"; exit 1 ;;
+          esac
+          echo "runtime ABI: $abi"
+          runtime/build-runtime.sh "$abi"
 
       - name: flutter pub get
         working-directory: app
