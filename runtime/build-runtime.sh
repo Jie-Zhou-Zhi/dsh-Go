@@ -44,9 +44,11 @@ PNPM_VERSION="${PNPM_VERSION:-11.28.5}"
 # dist.integrity of pnpm-$PNPM_VERSION.tgz, identical on registry.npmjs.org and npmmirror
 PNPM_INTEGRITY="${PNPM_INTEGRITY:-sha512-SEVj0wtMKtJ8tIqpT/KzAtvOvI/2vyiBbCWJiG4UbOf3bzVPO8GkOOb16XaMMCqgpvet2CMpA81M+BQmy8FNng==}"
 UBUNTU_VERSION="${UBUNTU_VERSION:-24.04.5}"
-PROOT_VERSION="5.1.107.98"
-TALLOC_VERSION="2.5.0"
-SHMEM_VERSION="0.7"
+# Termux drops superseded builds from its index, so these three can be taken from the index the
+# build reads anyway (the deb hash is verified against that index). Pins stay as the default.
+PROOT_VERSION="${PROOT_VERSION:-5.1.107.98}"
+TALLOC_VERSION="${TALLOC_VERSION:-2.5.0}"
+SHMEM_VERSION="${SHMEM_VERSION:-0.7}"
 UBUNTU_EXTRA="${UBUNTU_EXTRA:-tzdata ca-certificates git}"   # extra noble debs (+ dependency closure)
 PYTHON_VERSION="${PYTHON_VERSION:-3.12.15}"
 PBS_RELEASE="${PBS_RELEASE:-20261021}"    # astral-sh/python-build-standalone release tag
