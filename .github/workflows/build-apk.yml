@@ -53,13 +53,17 @@ jobs:
       #   仓库 Settings → Secrets and variables → Actions 里加四个：
       #   ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD
       - name: 恢复签名密钥
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
         env:
           KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KS_KEYPASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          # secrets 不能用在 if: 里，只能这样判空。
+          if [ -z "$KS_B64" ]; then
+            echo "没有 ANDROID_KEYSTORE_BASE64，本次退回 debug 签名（换包需卸载）"
+            exit 0
+          fi
           printf '%s' "$KS_B64" | base64 -d > "$RUNNER_TEMP/dsh-signing.keystore"
           {
             echo "storeFile=$RUNNER_TEMP/dsh-signing.keystore"
