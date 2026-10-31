@@ -91,10 +91,12 @@ void main() {
   });
 
   group('static shortcuts', () {
-    final xml = readRes('xml/shortcuts.xml');
+    // The template lives outside res/: build.gradle.kts copies it into the generated res dir with
+    // the installed package name substituted for targetPackage.
+    final xml = File('android/app/shortcuts/shortcuts.xml').readAsStringSync();
     final entry = _source('shortcuts/EntryActivity.kt');
     final gradle = File('android/app/build.gradle.kts').readAsStringSync();
-    final applicationId = RegExp(r'applicationId = "([^"]+)"').firstMatch(gradle)!.group(1)!;
+    final applicationId = RegExp(r'officialAppId = "([^"]+)"').firstMatch(gradle)!.group(1)!;
     final strings = readRes('values-zh/entry_strings.xml');
 
     final shortcuts = RegExp(r'<shortcut\b([\s\S]*?)</shortcut>').allMatches(xml).map((m) => m.group(1)!).toList();

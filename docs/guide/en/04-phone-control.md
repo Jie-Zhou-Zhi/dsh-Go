@@ -9,7 +9,7 @@ Let DSH read the screen, tap and type to get things done on your phone. Pause or
 
 1. Turn on the switch at the top. The first time, you'll see what's read and where it goes; tap **Agree**. Turning it on or off restarts a running engine, interrupting any reply in progress.
 2. Under **Setup**, tap **Turn on** next to **Accessibility service**, and turn on "DSH Phone Control" in Android's accessibility settings. If the switch won't turn on for a sideloaded app, tap **Accessibility switch disabled?** for brand-specific steps to allow restricted settings.
-3. Tap **Turn on** next to **Notifications** and allow notifications in App info. Approvals and the stop button need them.
+3. Tap **Turn on** next to **Notifications** and allow notifications in App info. The confirmation card, the approval buttons in the notification and the stop button need them.
 4. Tap **Read current screen** to see what DSH can read. This reading isn't sent to the model.
 
 During a task, text on the screen is sent to the model you chose; with a vision model, a screenshot may be included. Bank card and ID numbers are masked first.
@@ -83,7 +83,7 @@ An approval card left for 30 seconds counts as **Decline**. In every mode, syste
 
 Once phone control is on, this row is under **Advanced** on the phone control page; tap it to read the guidance again. **Open system settings** opens DSH Go's system App info page.
 
-When a step needs your decision, DSH Go shows a card. If the card is unavailable, it tries a notification or returns to the app. Allow phone-control notifications and pop-up alerts in system settings. Some phones also offer a permission to display pop-up windows while running in the background; allowing it can help the app return. Menu names vary by system version.
+When a step needs your decision, DSH Go offers two ways to answer it: a **confirmation card** on screen and a **notification for the same request** in the shade. The buttons are the same, whichever you answer first counts, and the other one disappears right away — so a card you cannot tap, one hidden behind another window, or a full-screen app no longer blocks the task: just pull down the shade and tap **Allow once**. Only when neither works does it return to the app to ask. Allow phone-control notifications and pop-up alerts in system settings. Some phones also offer a permission to display pop-up windows while running in the background; allowing it can help the app return. Menu names vary by system version.
 
 If the app doesn't return after a task finishes, tap **Task complete · View result** in the notification. If the system blocks notifications or background windows, open DSH Go yourself to see the result. Turning on **Back to DSH Go when done** doesn't guarantee that the system will allow it.
 

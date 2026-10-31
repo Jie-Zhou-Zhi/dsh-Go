@@ -157,7 +157,8 @@ class PromptTicket internal constructor(
     private val latch = CountDownLatch(1)
     private var result: PromptResult? = null
     private var surface = PromptSurface.NONE
-    private var presentation: PromptPresentation? = null
+    /** Every live presentation of this ticket: the overlay card and the notification, both usable. */
+    private val presentations = mutableListOf<PromptPresentation>()
     private val callbacks = mutableListOf<(PromptResult) -> Unit>()
 
     init { revoked.listen { finish(PromptOutcome.STOPPED, revoked.reason ?: "stale") } }
@@ -171,27 +172,30 @@ class PromptTicket internal constructor(
         else if (clock() >= deadline) finish(PromptOutcome.TIMEOUT)
     }
 
+    /** Adds one more way to answer the same question; the first answer wins in [finish]. */
     fun attempt(surface: PromptSurface): PromptPresentation? {
         if (!live) return null
         return synchronized(lock) {
             if (result != null) return null
-            PromptPresentation(this, surface, nonce()).also { presentation = it }
+            PromptPresentation(this, surface, nonce()).also { presentations += it }
         }
     }
 
-    internal fun owns(p: PromptPresentation): Boolean = live && synchronized(lock) { presentation === p }
+    internal fun owns(p: PromptPresentation): Boolean = live && synchronized(lock) { presentations.any { it === p } }
 
     internal fun shown(p: PromptPresentation): Boolean {
         if (!owns(p)) return false
         return synchronized(lock) {
-            if (result != null || presentation !== p) return false
-            surface = p.surface
-            p.shown = true
+            if (result != null || presentations.none { it === p }) return false
+            if (!p.shown) {
+                p.shown = true
+                if (surface == PromptSurface.NONE) surface = p.surface
+            }
             true
         }
     }
 
-    internal fun retire(p: PromptPresentation) { synchronized(lock) { if (presentation === p) presentation = null } }
+    internal fun retire(p: PromptPresentation) { synchronized(lock) { presentations.removeAll { it === p } } }
 
     internal fun choose(p: PromptPresentation, choice: PromptChoice): Boolean {
         if (!owns(p) || !p.shown || choice !in content.choices) return false
@@ -216,7 +220,9 @@ class PromptTicket internal constructor(
         val finished: PromptResult
         val listeners: List<(PromptResult) -> Unit>
         synchronized(lock) {
-            if (result != null || (expected != null && presentation !== expected)) return false
+            if (result != null || (expected != null && presentations.none { it === expected })) return false
+            // The answer may come from either channel: report the one that answered.
+            if (expected != null) surface = expected.surface
             // Recheck at the action's linearization point, not just when the view received DOWN.
             val retired = expected != null && (!ownerValid() || revoked.reason != null)
             val expired = expected != null && clock() >= deadline
@@ -226,7 +232,7 @@ class PromptTicket internal constructor(
                 else -> PromptResult(outcome, surface, reason)
             }
             result = finished
-            presentation = null
+            presentations.clear()
             listeners = callbacks.toList()
             callbacks.clear()
         }
@@ -273,7 +279,7 @@ class PromptTicket internal constructor(
 
     private fun ownerValid() = runCatching(ownerCurrent).getOrDefault(false)
 
-    fun presentation(nonce: String): PromptPresentation? = synchronized(lock) { presentation?.takeIf { it.nonce == nonce } }
+    fun presentation(nonce: String): PromptPresentation? = synchronized(lock) { presentations.firstOrNull { it.nonce == nonce } }
     fun finalPresentationSurface(): PromptSurface = synchronized(lock) { surface }
 }
 
@@ -314,8 +320,14 @@ class MainThreadCall<T>(private val block: () -> T) {
 
 /** Input facts are supplied by Android; policies stay testable without pretending to inject a real touch. */
 object PromptInputPolicy {
+    /**
+     * @param injectedStroke [MotionFacts.injectedStroke]: the event carries no pointing tool, so
+     *   it came from dispatchGesture rather than an input device. A device id is not used to
+     *   guess this — some ROMs report `deviceId <= 0` for real touches over an overlay window.
+     * @param touchExploration TalkBack answers through those very strokes; double-tap is the way in.
+     */
     fun allows(now: Long, armedAt: Long, live: Boolean, injecting: Boolean, obscured: Boolean,
-               virtualDevice: Boolean, suspiciousStroke: Boolean, touchExploration: Boolean): Boolean =
+               injectedStroke: Boolean, touchExploration: Boolean): Boolean =
         live && now >= armedAt && !injecting && !obscured &&
-            !(virtualDevice && suspiciousStroke && !touchExploration)
+            !(injectedStroke && !touchExploration)
 }

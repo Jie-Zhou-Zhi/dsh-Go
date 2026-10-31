@@ -2,6 +2,18 @@
 
 每个版本先中文、后英文。发版时把对应版本的正文（不含版本标题）作为 Release 正文，见 `docs/release.md`。
 
+## 未发布 · Unreleased
+
+### 中文
+
+- 修复手机操控确认卡的按钮点不动：判定真实触摸不再依赖系统上报的设备号（部分机型在悬浮窗上会把手指的 deviceId 报成 0 或 -1），改看触摸事件的工具类型；真实手指、触控笔、鼠标都能按，只有无障碍注入的笔迹仍被拒绝。
+- 确认请求现在有第二种授权方式：同一条请求除了屏幕上的确认卡，也会出现在通知栏，按钮相同；哪边先回答就按哪边算，另一边自动消失。卡片点不动或正在用全屏应用时，下拉通知栏即可授权。
+
+### English
+
+- Fixed unresponsive confirm-card buttons: a real touch is no longer judged by the device id the system reports (some devices report 0 or -1 for a finger that lands on an overlay window). The event's tool type decides instead, so fingers, stylus and mouse work while injected accessibility strokes are still refused.
+- Confirmation requests now have a second way to be answered: the same request appears on the confirmation card and in the notification shade, with the same buttons. Whichever is answered first wins and the other disappears, so a card that cannot be tapped no longer blocks the task.
+
 ## 1.0.11 · 2026-11-05
 
 ### 中文
