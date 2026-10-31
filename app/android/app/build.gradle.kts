@@ -22,42 +22,15 @@ val hasWholeReleaseKey = listOf("storeFile", "keyAlias").all { !keyProps.getProp
 // Per-ABI runtime bundles produced by runtime/build-runtime.sh.
 val runtimeOut = rootProject.file("../../runtime/out")
 
-// The package name this build installs as. A local build can pick another one so it sits
-// beside the official app instead of replacing it (which would delete its data):
-//   -PdshAppId=com.example.dshgo        (or dshAppId=… in android/gradle.properties)
-// The Kotlin namespace and the source tree stay put; app/test/system_entry/
-// launcher_icon_geometry_test.dart reads the default from the line below.
+// The package name this build installs as. A local build can pick another one so it sits beside
+// the official app instead of replacing it (which would delete its data):
+//   -PdshAppId=com.example.dshgo     (or dshAppId=… in android/gradle.properties)
+// The Kotlin namespace and the source tree stay put. Known limit of a renamed build: the static
+// launcher shortcuts (res/xml/shortcuts.xml) still name the official package in targetPackage, so
+// 新对话 / 语音输入 do nothing there; recent-chat shortcuts are rebuilt at runtime and are fine.
 val officialAppId = "io.github.ccch1mneyyy.dsh_app"
 val dshAppId = (findProperty("dshAppId") as String?)?.trim()?.takeIf { it.isNotEmpty() } ?: officialAppId
-val alternateAppId = dshAppId != officialAppId
-
-// shortcuts/shortcuts.xml is the launcher-shortcut template. Its targetPackage is the installed
-// package name, which an XML resource cannot take from a placeholder, so the build writes a copy
-// with the id substituted into the generated res dir below. Only targetPackage changes: the
-// target class keeps the namespace, so it stays correct under any applicationId.
-val shortcutsTemplate = file("shortcuts/shortcuts.xml")
-val shortcutsRes = layout.buildDirectory.dir("generated/dshShortcuts/res")
-val generateShortcuts = tasks.register("generateShortcutsXml") {
-    val template = shortcutsTemplate
-    val installed = dshAppId
-    val target = shortcutsRes.map { it.file("xml/shortcuts.xml") }
-    inputs.file(template)
-    inputs.property("appId", installed)
-    outputs.file(target)
-    doLast {
-        val out = target.get().asFile
-        out.parentFile.mkdirs()
-        val xml = template.readText().replace(
-            "android:targetPackage=\"$officialAppId\"",
-            "android:targetPackage=\"$installed\"",
-        )
-        out.writeText(xml)
-    }
-}
-tasks.matching { it.name.startsWith("merge") && it.name.contains("Resources") }.configureEach {
-    dependsOn(generateShortcuts)
-}
-if (alternateAppId) logger.lifecycle("dsh-go: this build installs as $dshAppId (official package: $officialAppId)")
+if (dshAppId != officialAppId) logger.lifecycle("dsh-go: this build installs as $dshAppId (official package: $officialAppId)")
 
 // versionCode is the build minute, same encoding as tooling/build_number.py:
 // (year - 2026) * 10^8 + MMDDhhmm at UTC+8. tooling/build-apk.sh passes it as
@@ -103,11 +76,6 @@ android {
     }
 
     sourceSets {
-        getByName("main") {
-            // The generated copy above: the template lives outside res/ precisely so this is the
-            // only xml/shortcuts.xml in the merge.
-            res.srcDir(shortcutsRes.get().asFile)
-        }
         getByName("arm64") {
             assets.srcDir(File(runtimeOut, "arm64-v8a/assets"))
             jniLibs.srcDir(File(runtimeOut, "arm64-v8a/jniLibs"))
