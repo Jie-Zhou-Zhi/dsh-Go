@@ -5,7 +5,7 @@ name: publish-apk
 on:
   # 本机 POST 常被 TLS 拦截、workflow_dispatch 用不了，推 tag 也能发布。
   push:
-    tags: ["v1.0.4-a11y-test", "test-*"]
+    tags: ["v1.0.4-local", "v1.0.4-a11y-test", "test-*"]
   workflow_dispatch:
     inputs:
       run_id:
@@ -32,7 +32,7 @@ jobs:
         run: |
           run_id="${{ inputs.run_id }}"
           if [ -z "$run_id" ]; then
-            run_id="$(gh run list --repo "${{ github.repository }}" --workflow build-apk.yml --branch test/a11y-merge --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+            run_id="$(gh run list --repo "${{ github.repository }}" --workflow build-apk.yml --commit "$GITHUB_SHA" --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
           fi
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
           echo "build run: $run_id"
