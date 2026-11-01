@@ -14,6 +14,11 @@ on:
         type: choice
         options: [arm64, x64]
         default: arm64
+      signing:
+        description: "签名方式（debug＝测试签名，可与正式包共存）"
+        type: choice
+        options: [release, debug]
+        default: release
 
 concurrency:
   group: build-apk-${{ github.ref }}-${{ inputs.flavor }}
@@ -53,6 +58,7 @@ jobs:
       #   仓库 Settings → Secrets and variables → Actions 里加四个：
       #   ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD
       - name: 恢复签名密钥
+        if: ${{ inputs.signing != 'debug' }}
         env:
           KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
