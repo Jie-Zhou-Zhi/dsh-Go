@@ -69,7 +69,9 @@ internal object PhonePromptUi {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(ctx, 18), dp(ctx, 16), dp(ctx, 18), dp(ctx, 16))
             background = GradientDrawable().apply { setColor(bg); cornerRadius = dp(ctx, 20).toFloat() }
-            filterTouchesWhenObscured = true
+            // No filterTouchesWhenObscured on the card: it drops every touch inside the card when the
+            // system marks the overlay obscured, which is what a landscape game or another app in
+            // front produces — approvals then never reached 允许 / 拒绝 (PromptInputPolicy).
         }
         card.addView(TextView(ctx).apply {
             text = title(ctx, p.ticket.content)
@@ -151,19 +153,19 @@ internal object PhonePromptUi {
     private fun dp(ctx: Context, value: Int) = (ctx.resources.displayMetrics.density * value).toInt()
 
     /**
-     * Same injected/obscured-input boundary as ControlOverlay, also used by the Activity fallback.
-     * Like every guarded button it judges the touch by [MotionFacts], never by a device id that a
-     * ROM may report as ≤ 0 for a real finger on an overlay window.
+     * Same injected-stroke boundary as ControlOverlay, also used by the Activity fallback.
+     * Judges the touch by [MotionFacts], never by a device id a ROM may report as ≤ 0 for a real
+     * finger on an overlay window, and never by the system's obscured flag.
      */
     private class PromptButton(ctx: Context, private val armedAt: Long, private val p: PromptPresentation) : TextView(ctx) {
         private val a11y = ctx.getSystemService(AccessibilityManager::class.java)
         private var rejected = false
-        init { filterTouchesWhenObscured = true; isClickable = true; isFocusable = true; gravity = Gravity.CENTER }
+        init { isClickable = true; isFocusable = true; gravity = Gravity.CENTER }
 
         override fun dispatchTouchEvent(event: MotionEvent): Boolean {
             if (event.actionMasked == MotionEvent.ACTION_DOWN) {
                 rejected = !PromptInputPolicy.allows(SystemClock.elapsedRealtime(), armedAt, p.live, InjectGuard.active(),
-                    MotionFacts.obscured(event), MotionFacts.injectedStroke(event),
+                    MotionFacts.injectedStroke(event),
                     a11y.isTouchExplorationEnabled)
                 Log.i("DshPrompt", "prompt button '$text': ${if (rejected) "refused" else "accepted"} ${MotionFacts.describe(event)}")
             }
