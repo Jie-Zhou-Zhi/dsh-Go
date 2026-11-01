@@ -318,16 +318,28 @@ class MainThreadCall<T>(private val block: () -> T) {
     }
 }
 
-/** Input facts are supplied by Android; policies stay testable without pretending to inject a real touch. */
+/**
+ * Input facts are supplied by Android; policies stay testable without pretending to inject a real touch.
+ *
+ * Neither [android.view.MotionEvent.FLAG_WINDOW_IS_OBSCURED] nor the platform's
+ * `filterTouchesWhenObscured` gate is consulted: for an overlay window the system raises those
+ * flags for windows the person can see and aim at (another app in front, a landscape game, the
+ * immersive-mode decor), and a rate that swallowed every such touch left the approval buttons
+ * dead until the countdown expired. Injection is what the remaining checks cover, and a real
+ * finger is the one thing an overlay cannot fake.
+ */
 object PromptInputPolicy {
     /**
      * @param injectedStroke [MotionFacts.injectedStroke]: the event carries no pointing tool, so
      *   it came from dispatchGesture rather than an input device. A device id is not used to
      *   guess this — some ROMs report `deviceId <= 0` for real touches over an overlay window.
      * @param touchExploration TalkBack answers through those very strokes; double-tap is the way in.
+     *
+     * The system's obscured flag is deliberately not consulted: it is raised whenever another
+     * app, a landscape game or the immersive decor sits above the touch, even when the button
+     * is plainly visible — refusing on it killed every press until the countdown expired.
      */
-    fun allows(now: Long, armedAt: Long, live: Boolean, injecting: Boolean, obscured: Boolean,
+    fun allows(now: Long, armedAt: Long, live: Boolean, injecting: Boolean,
                injectedStroke: Boolean, touchExploration: Boolean): Boolean =
-        live && now >= armedAt && !injecting && !obscured &&
-            !(injectedStroke && !touchExploration)
+        live && now >= armedAt && !injecting && !(injectedStroke && !touchExploration)
 }

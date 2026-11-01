@@ -211,20 +211,26 @@ class PhonePromptTest {
     @Test fun aFingerOnARomThatReportsNoDeviceIdStillAuthorizes() {
         // deviceId is not an input: a finger on an overlay window is accepted even where the ROM
         // reports 0 / -1 for it, which used to make every press look like an injected stroke.
-        assertTrue(PromptInputPolicy.allows(1000, 600, true, false, false, false, false))
+        assertTrue(PromptInputPolicy.allows(1000, 600, true, false, false, false))
     }
 
-    @Test fun injectedAndObscuredTouchesNeverAuthorize() {
-        assertFalse(PromptInputPolicy.allows(1000, 600, true, true, false, false, false))
-        assertFalse(PromptInputPolicy.allows(1000, 600, true, false, true, false, true))
-        assertFalse(PromptInputPolicy.allows(1000, 600, true, false, false, true, false))
+    @Test fun anObscuredFlagNoLongerBlocksARealFinger() {
+        // The system raises FLAG_WINDOW_IS_OBSCURED whenever another app, a landscape game or the
+        // immersive decor sits above the overlay — not evidence of tapjacking. The policy no longer
+        // takes it as an input at all, so a finger that reaches the button still authorizes.
+        assertTrue(PromptInputPolicy.allows(1000, 600, true, false, false, false))
+    }
+
+    @Test fun injectedTouchesNeverAuthorize() {
+        assertFalse(PromptInputPolicy.allows(1000, 600, true, true, false, false))
+        assertFalse(PromptInputPolicy.allows(1000, 600, true, false, true, false))
     }
 
     @Test fun talkBackExceptionDoesNotBypassArmingOrLifetime() {
-        assertTrue(PromptInputPolicy.allows(1000, 600, true, false, false, true, true))
-        assertFalse(PromptInputPolicy.allows(500, 600, true, false, false, true, true))
-        assertFalse(PromptInputPolicy.allows(1000, 600, false, false, false, true, true))
-        assertFalse(PromptInputPolicy.allows(1000, 600, true, false, true, true, true))
+        assertTrue(PromptInputPolicy.allows(1000, 600, true, false, true, true))
+        assertFalse(PromptInputPolicy.allows(500, 600, true, false, true, true))
+        assertFalse(PromptInputPolicy.allows(1000, 600, false, false, true, true))
+        assertFalse(PromptInputPolicy.allows(1000, 600, true, true, true, true))
     }
 
     @Test fun notificationAndCardCanBothAnswerOneTicket() {

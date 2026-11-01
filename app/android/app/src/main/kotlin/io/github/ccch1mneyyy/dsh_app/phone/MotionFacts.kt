@@ -16,10 +16,6 @@ object MotionFacts {
     /** MotionEvent.FLAG_IS_ACCESSIBILITY_EVENT (hidden, API 31+). Real fingers carry it too. */
     const val FLAG_IS_ACCESSIBILITY_EVENT = 0x800
 
-    /** The touch came through another app's window on top of this one (tapjacking). */
-    fun obscured(event: MotionEvent): Boolean =
-        event.flags and (MotionEvent.FLAG_WINDOW_IS_OBSCURED or MotionEvent.FLAG_WINDOW_IS_PARTIALLY_OBSCURED) != 0
-
     /**
      * Looks like a stroke an accessibility service injected rather than a person's input
      * device: the event has no pointing tool at all. A finger, stylus, mouse or eraser is
