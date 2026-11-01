@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       app_id:
-        description: "安装包名（留空＝官方名 io.github.ccch1mneyyy.dsh_app）"
+        description: "安装包名（默认独立测试包，和官方包并存；要覆盖升级才填官方名）"
         required: false
-        default: "io.github.ccch1mneyyy.dshgo.local"
+        default: "io.github.ccch1mneyyy.dshgo.test"
       flavor:
         description: "架构"
         type: choice
