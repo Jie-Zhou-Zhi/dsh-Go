@@ -255,4 +255,33 @@ class PhonePromptTest {
         assertEquals(PromptOutcome.REJECT, t.finalResult().outcome)
         assertEquals(PromptSurface.OVERLAY, t.finalResult().presented)
     }
+
+    @Test fun notificationKeepsRefusalAndBothWaiversAndDropsStop() {
+        // The shade fits three actions. A four-choice native confirm used to lose 「单次允许」and keep
+        // 「终止此次任务」, so the shade offered no way to approve at all.
+        val all = listOf(PromptChoice.ALLOW_TASK, PromptChoice.ALLOW_ONCE, PromptChoice.REJECT, PromptChoice.STOP)
+        assertEquals(
+            listOf(PromptChoice.ALLOW_TASK, PromptChoice.ALLOW_ONCE, PromptChoice.REJECT),
+            NotificationActions.of(all),
+        )
+    }
+
+    @Test fun notificationDropsStopForTheAppWaiverVariantToo() {
+        val all = listOf(PromptChoice.ALLOW_APP, PromptChoice.ALLOW_ONCE, PromptChoice.REJECT, PromptChoice.STOP)
+        assertEquals(
+            listOf(PromptChoice.ALLOW_APP, PromptChoice.ALLOW_ONCE, PromptChoice.REJECT),
+            NotificationActions.of(all),
+        )
+    }
+
+    @Test fun notificationLeavesShortChoicesAlone() {
+        assertEquals(
+            listOf(PromptChoice.CONTINUE, PromptChoice.STOP),
+            NotificationActions.of(listOf(PromptChoice.CONTINUE, PromptChoice.STOP)),
+        )
+        assertEquals(
+            listOf(PromptChoice.ALLOW_ONCE, PromptChoice.REJECT),
+            NotificationActions.of(listOf(PromptChoice.ALLOW_ONCE, PromptChoice.REJECT)),
+        )
+    }
 }
