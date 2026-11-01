@@ -330,6 +330,8 @@ class SafetyGate(
             s.packageName == ownPackage && !p.unlocks.ownApp -> OWN_APP
             s.packageName != null && s.packageName in p.denyPackages -> denied(labelOf(s.packageName, s.appLabel))
             // l10n:keep agent safety result
+            s.sensitiveView -> "当前页面可能受敏感视图策略限制（Android 14 起，密码、支付、验证这类页面会被系统过滤），DSH 读不到文字，也不在这类页面盲点盲滑。需要用户操作的话请调用 handoff。"
+            // l10n:keep agent safety result
             s.secure -> "当前窗口是安全窗口（禁止截屏 / 读取，常见于支付、银行、密码页），不读取内容。需要用户操作的话请调用 handoff。"
             // l10n:keep agent safety result
             s.image != null && ("«银行卡" in s.text || "«身份证" in s.text) ->

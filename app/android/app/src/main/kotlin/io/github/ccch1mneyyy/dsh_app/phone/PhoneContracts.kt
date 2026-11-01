@@ -42,6 +42,13 @@ data class ScreenSnapshot(
     val secure: Boolean = false,
     /** Fewer than five text nodes: games, canvases, some mini-programs. */
     val poorTree: Boolean = false,
+    /**
+     * The platform marks this page's content data-sensitive (Android 14+, password / payment /
+     * verification pages): no text reaches us, screenshots are blocked or black, and the driver
+     * refuses coordinate taps and screen swipes here. [secure] is the older, wider flag (window
+     * refuses capture); this one says *why* and keeps the page's own wording.
+     */
+    val sensitiveView: Boolean = false,
     /** Optional numbered screenshot (same element ids drawn on it), PNG or JPEG bytes. */
     val image: ByteArray? = null,
     val imageMime: String? = null,

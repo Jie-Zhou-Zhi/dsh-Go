@@ -36,6 +36,12 @@ class ScreenInput(
     /** Extra lines under the header (protected page, secure window …). */
     val notes: List<String> = emptyList(),
     val charBudget: Int = 3000,
+    /**
+     * What to say when the page has fewer than [ScreenFormat.POOR_TREE] text nodes. Defaults to
+     * [ScreenFormat.POOR_TREE_NOTE]; the driver swaps in [SensitiveView.note] when the page may be
+     * filtered by the platform rather than being a game or canvas.
+     */
+    val poorTreeNote: String = ScreenFormat.POOR_TREE_NOTE,
 )
 
 enum class ElementKind { ITEM, INPUT, LIST }
@@ -131,7 +137,7 @@ object ScreenFormat {
         val header = StringBuilder()
         val notes = input.notes.toMutableList()
         val poor = textNodes < POOR_TREE && windows.isNotEmpty()
-        if (poor) notes += POOR_TREE_NOTE
+        if (poor) notes += input.poorTreeNote
 
         // Page budget: keep the 底部 zone (navigation) and cut the middle with a hint.
         val headerLen = 40 + (input.appLabel?.length ?: 0) + notes.sumOf { it.length + 1 }

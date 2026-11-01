@@ -68,6 +68,12 @@ class UiNode(
     /** RangeInfo current / max, when the node is a slider or progress. */
     val rangeCurrent: Float? = null,
     val rangeMax: Float? = null,
+    /**
+     * API 34+ `isAccessibilityDataSensitive`: the app (or the platform, for password / payment /
+     * verification pages) marked this content as not for accessibility tools. A service that is
+     * not an accessibility *tool* gets the node but no text — see [SensitiveView].
+     */
+    val dataSensitive: Boolean = false,
     val children: List<UiNode> = emptyList(),
 )
 

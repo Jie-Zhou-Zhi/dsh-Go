@@ -66,9 +66,17 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         val mainWindowId: Int?,
         /** The front window hides its content from us (data-sensitive page): reported as secure. */
         val hidden: Boolean,
+        /** The platform marks the content data-sensitive: see [SensitiveView]. */
+        val filtered: Boolean = false,
+        /** Keyboard up/down and window insets are changes too, even when no element moved. */
+        val keyboardShown: Boolean = false,
+        val mainBounds: Box? = null,
     ) {
         @Volatile var image: ImageGeometry? = null
         val fingerprints: Set<String> by lazy { screen.elements.map { it.fingerprint }.toSet() }
+
+        /** Anything to compare two observations with: an unreadable page has nothing. */
+        val readable: Boolean get() = !filtered && !hidden && fingerprints.isNotEmpty()
     }
 
     fun close() {
@@ -125,12 +133,25 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
                             snap.image = shot.geometry
                             // l10n:keep agent screen result
                             text.append("\n截图上的数字就是上面的元素编号；tap_xy 的坐标按截图像素（${shot.geometry!!.width}×${shot.geometry.height}）。")
+                            // The system's own capture moment, so the model can tell a stale frame
+                            // from the page it just read.
+                            shot.takenAtMs?.let {
+                                // l10n:keep agent screen result
+                                text.append("\n截图时间：${ScreenShooter.clockText(it)}（系统截图时刻）。")
+                            }
+                        // A blocked screenshot is the sensitive-view case, not a generic failure:
+                        // name it, so the model stops trying and hands off instead.
+                        } else if (shot.secure) text.append("\n提示：${SensitiveView.SCREENSHOT_BLOCKED}")
                         // l10n:keep agent screen result
-                        } else text.append("\n提示：${shot.error ?: "截图失败"}。")
+                        else text.append("\n提示：${shot.error ?: "截图失败"}。")
                     }
                 }
             }
-            ScreenSnapshot(snap.id, text.toString(), snap.appLabel, snap.packageName, secure || snap.hidden, snap.screen.poorTree, bytes, mime)
+            ScreenSnapshot(
+                snap.id, text.toString(), snap.appLabel, snap.packageName,
+                secure = secure || snap.hidden, poorTree = snap.screen.poorTree,
+                sensitiveView = snap.filtered, image = bytes, imageMime = mime,
+            )
         } finally { cap.recycle() }
     }
 
@@ -396,6 +417,9 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             targetId = snap.screen.elements.filter { it.kind == ElementKind.LIST }.maxByOrNull { it.bounds.area }?.id
         }
         if (targetId == null) {
+            // Nothing readable to scroll: a full-screen swipe would be a blind one.
+            // l10n:keep agent screen result
+            if (snap?.filtered == true) return ActionResult(false, SensitiveView.REFUSED_SWIPE, observeQuiet())
             // l10n:keep agent screen result
             if (snap?.ownApp == true && !lifted.ownApp) return ActionResult(false, "这是 DSH 自己的界面，不操作。")
             val screen = screenBox()
@@ -445,6 +469,10 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             // l10n:keep agent screen result
             return ActionResult(false, "屏幕编号 ${a.screenId} 已过期，坐标对不上了。请重新 screen 加 image 再点。", now)
         }
+        // A page the platform filters reads like nothing at all; the coordinates are then the only
+        // thing that still works, which is exactly why a blind tap there is refused.
+        // l10n:keep agent screen result
+        if (snap.filtered) return ActionResult(false, SensitiveView.REFUSED_TAP, observeQuiet())
         // l10n:keep agent screen result
         val geometry = snap.image ?: return ActionResult(false, "屏幕 ${a.screenId} 没有截图。坐标点击要先用 screen 加 image 拿一张标号截图。")
         val point = geometry.toScreen(a.x, a.y)
@@ -475,9 +503,18 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         }
         try {
             val snap = publish(cap, false)
-            val unchanged = previous != null && previous.packageName == snap.packageName && previous.fingerprints == snap.fingerprints
+            // Only two readable observations of the same app can be compared. When the platform
+            // filters the page (sensitive view) — or nothing was read before — an accepted action
+            // is reported as unverifiable rather than as 「没有变化」, which reads like a miss.
+            val comparable = previous != null && previous.packageName == snap.packageName &&
+                previous.readable && snap.readable
+            // Keyboard up/down and window inset changes are screen changes too: on a page whose
+            // elements did not move, opening or closing the keyboard used to read as 「没有变化」.
+            val changed = previous == null || previous.fingerprints != snap.fingerprints ||
+                previous.keyboardShown != snap.keyboardShown || previous.mainBounds != snap.mainBounds
             val note = when {
-                !unchanged -> ""
+                !comparable -> SensitiveView.CANNOT_VERIFY
+                changed -> ""
                 // l10n:keep agent screen result
                 scrolled -> "内容没有变化，可能已经到头了。"
                 // l10n:keep agent screen result
@@ -571,11 +608,15 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
         // l10n:keep agent screen result
         } else if (cap.windows.isEmpty()) notes += "提示：读不到前台界面（可能是锁屏、安全页面或系统界面）。"
         val previous = latest?.takeIf { it.packageName == pkg }?.screen?.keys
+        // A page we cannot read is no longer blamed on games and canvases: the platform may be
+        // filtering it (Android 14+ sensitive views), and the model must hear that possibility.
+        val poorTreeNote = SensitiveView.note(cap.filtered, cap.windows)
         fun format(notes: List<String>) = ScreenFormat.format(
             ScreenInput(
                 screenId = id, appLabel = appLabel, packageName = pkg,
                 screenWidth = cap.screen.width, screenHeight = cap.screen.height, keyboardShown = cap.keyboardShown,
                 windows = cap.windows, detail = detail, previousKeys = previous, notes = notes,
+                poorTreeNote = poorTreeNote ?: ScreenFormat.POOR_TREE_NOTE,
             ),
         )
         var formatted = format(notes)
@@ -585,12 +626,21 @@ internal class MainScreenDriver(private val service: PhoneA11yService, private v
             // l10n:keep agent screen result
             formatted = format(notes + "提示：用户已允许 DSH 填写密码和验证码，标着「不可代填」的输入框也可以输入。")
         }
-        val snap = Snapshot(id, formatted, pkg, appLabel, protectedPage, cap.ownAppInFront, cap.windows.lastOrNull()?.id, cap.hiddenWindowTitle != null)
+        val snap = Snapshot(
+            id, formatted, pkg, appLabel, protectedPage, cap.ownAppInFront, cap.windows.lastOrNull()?.id,
+            cap.hiddenWindowTitle != null,
+            filtered = cap.filtered,
+            keyboardShown = cap.keyboardShown,
+            mainBounds = cap.windows.lastOrNull()?.bounds,
+        )
         latest = snap
         return snap
     }
 
-    private fun toSnapshot(s: Snapshot) = ScreenSnapshot(s.id, s.screen.text, s.appLabel, s.packageName, secure = s.hidden, poorTree = s.screen.poorTree)
+    private fun toSnapshot(s: Snapshot) = ScreenSnapshot(
+        s.id, s.screen.text, s.appLabel, s.packageName,
+        secure = s.hidden, poorTree = s.screen.poorTree, sensitiveView = s.filtered,
+    )
 
     /** A fresh text snapshot for an action result; null when the screen can't be read now. */
     private fun observeQuiet(): ScreenSnapshot? {

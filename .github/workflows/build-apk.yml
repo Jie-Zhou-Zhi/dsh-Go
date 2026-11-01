@@ -14,10 +14,15 @@ on:
         type: choice
         options: [arm64, x64]
         default: arm64
+      signing:
+        description: "签名证书"
+        type: choice
+        options: [test, release]
+        default: test
 
   # 本机 POST 常被 TLS 拦截，推这条分支即构建；未给 inputs 时用下面的兜底值。
   push:
-    branches: [fix/prompt-touch]
+    branches: [fix/prompt-touch, feat/sensitive-view-diagnostics]
 
 concurrency:
   group: build-apk-${{ github.ref }}-${{ inputs.flavor || 'arm64' }}
@@ -54,18 +59,35 @@ jobs:
 
       # 固定签名密钥：装在手机上的包只有签名一致才能覆盖升级。没配 secret 时退回 debug 签名
       # （每次 runner 生成不同密钥，换个包就得先卸载）。
-      #   仓库 Settings → Secrets and variables → Actions 里加四个：
-      #   ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD
+      #   仓库 Settings → Secrets and variables → Actions：
+      #   测试证书（默认，inputs.signing=test）：
+      #     TEST_ANDROID_KEYSTORE_BASE64 / TEST_ANDROID_KEYSTORE_PASSWORD /
+      #     TEST_ANDROID_KEY_ALIAS / TEST_ANDROID_KEY_PASSWORD
+      #     本地副本：testkey/dsh-test.keystore，alias dshtest，
+      #     证书 SHA-256 67:F6:99:99:48:A6:05:97:FB:C2:BB:62:95:85:72:67:71:B8:76:04:F5:87:98:EF:72:EA:0C:45:11:E6:F3:D6
+      #   正式证书（inputs.signing=release）：ANDROID_KEYSTORE_* 四个，别覆盖。
       - name: 恢复签名密钥
         env:
-          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KS_KEYPASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          SIGNING: ${{ inputs.signing || 'test' }}
+          TEST_KS_B64: ${{ secrets.TEST_ANDROID_KEYSTORE_BASE64 }}
+          TEST_KS_PASS: ${{ secrets.TEST_ANDROID_KEYSTORE_PASSWORD }}
+          TEST_KS_ALIAS: ${{ secrets.TEST_ANDROID_KEY_ALIAS }}
+          TEST_KS_KEYPASS: ${{ secrets.TEST_ANDROID_KEY_PASSWORD }}
+          REL_KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          REL_KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          REL_KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          REL_KS_KEYPASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          if [ "$SIGNING" = "release" ]; then
+            KS_B64="$REL_KS_B64"; KS_PASS="$REL_KS_PASS"; KS_ALIAS="$REL_KS_ALIAS"; KS_KEYPASS="$REL_KS_KEYPASS"
+            MISSING="ANDROID_KEYSTORE_BASE64"
+          else
+            KS_B64="$TEST_KS_B64"; KS_PASS="$TEST_KS_PASS"; KS_ALIAS="$TEST_KS_ALIAS"; KS_KEYPASS="$TEST_KS_KEYPASS"
+            MISSING="TEST_ANDROID_KEYSTORE_BASE64"
+          fi
           # secrets 不能用在 if: 里，只能这样判空。
           if [ -z "$KS_B64" ]; then
-            echo "没有 ANDROID_KEYSTORE_BASE64，本次退回 debug 签名（换包需卸载）"
+            echo "没有 $MISSING（signing=$SIGNING），本次退回 debug 签名（换包需卸载）"
             exit 0
           fi
           printf '%s' "$KS_B64" | base64 -d > "$RUNNER_TEMP/dsh-signing.keystore"
@@ -75,8 +97,8 @@ jobs:
             echo "keyAlias=$KS_ALIAS"
             echo "keyPassword=$KS_KEYPASS"
           } > app/android/key.properties
-          echo "签名密钥已就位："
-          keytool -list -keystore "$RUNNER_TEMP/dsh-signing.keystore" -storepass "$KS_PASS" | tail -3
+          echo "签名密钥已就位（signing=$SIGNING, alias=$KS_ALIAS）："
+          keytool -list -keystore "$RUNNER_TEMP/dsh-signing.keystore" -storepass "$KS_PASS" -alias "$KS_ALIAS" | tail -4
 
       - uses: actions/setup-java@v4
         with:
@@ -139,6 +161,27 @@ jobs:
           done
 
       # runtime/build-runtime.sh 默认从清华镜像和 npmmirror 拉 Ubuntu base / Node / npm 树。
+      # 先做静态检查和单元测试：Dart 的错不该等两小时运行时构建完才暴露。
+      - name: flutter pub get（先取依赖）
+        working-directory: app
+        run: flutter pub get
+
+      - name: 静态检查
+        working-directory: app
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      # 纯 JVM 的 Kotlin 测试（phone 的格式 / 安全规则），不需要模拟器。
+      - name: Kotlin 单元测试（phone）
+        working-directory: app
+        continue-on-error: true
+        run: |
+          flutter build apk --config-only --flavor arm64 > /dev/null 2>&1 || true
+          if [ -x android/gradlew ]; then
+            (cd android && ./gradlew --no-daemon testArm64DebugUnitTest --tests 'io.github.ccch1mneyyy.dsh_app.phone.*' ) || true
+          else
+            echo "没有 gradlew（Flutter 按需生成），跳过 Kotlin 单元测试"
+          fi
+
       # Azure runner 上如果慢到超时，把它里的 UBUNTU_MIRROR、NODE_MIRROR、NPM_REGISTRY、
       # PBS_MIRROR 换成官方源（archive.ubuntu.com、nodejs.org、registry.npmjs.org）再跑。
       - name: 生成 Linux 运行时（最慢的一步）

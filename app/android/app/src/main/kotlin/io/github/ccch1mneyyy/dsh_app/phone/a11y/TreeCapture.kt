@@ -34,6 +34,12 @@ internal class Capture(
      * the emulator's Wi-Fi page. Treated as a secure window.
      */
     val hiddenWindowTitle: String? = null,
+    /**
+     * The windows have roots, but the platform marks their content data-sensitive and gives a
+     * non-tool service no text (Android 14+): password, payment and verification pages, some
+     * banking and authenticator apps. See [SensitiveView].
+     */
+    val filtered: Boolean = false,
     val takenAt: Long = SystemClock.uptimeMillis(),
 ) {
     fun native(ref: Int): AccessibilityNodeInfo? = natives.getOrNull(ref)
@@ -66,6 +72,8 @@ internal object TreeCapture {
         val natives = ArrayList<AccessibilityNodeInfo>(256)
         var count = 0
         var truncated = false
+        /** A node the platform marks data-sensitive (API 34+): the page's text is filtered from us. */
+        var anyFiltered = false
         val rect = Rect()
     }
 
@@ -132,6 +140,7 @@ internal object TreeCapture {
             systemInFront = systemFront,
             truncated = st.truncated,
             hiddenWindowTitle = hidden,
+            filtered = st.anyFiltered && chosen.isNotEmpty(),
         )
     }
 
@@ -172,6 +181,8 @@ internal object TreeCapture {
         val ref = st.natives.size
         st.natives += node
         st.count++
+        val dataSensitive = isDataSensitive(node)
+        if (dataSensitive) st.anyFiltered = true
 
         val children = ArrayList<UiNode>(node.childCount)
         if (depth < MAX_DEPTH) {
@@ -213,7 +224,12 @@ internal object TreeCapture {
             stateDesc = if (Build.VERSION.SDK_INT >= 30) node.stateDescription?.toString() else null,
             rangeCurrent = range?.current,
             rangeMax = range?.max,
+            dataSensitive = dataSensitive,
             children = children,
         )
     }
+
+    /** API 34+ `isAccessibilityDataSensitive`; false on older releases (the flag doesn't exist). */
+    private fun isDataSensitive(node: AccessibilityNodeInfo): Boolean =
+        Build.VERSION.SDK_INT >= 34 && node.isAccessibilityDataSensitive
 }

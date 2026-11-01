@@ -13,9 +13,13 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.os.Build
+import android.os.SystemClock
 import android.view.Display
 import io.github.ccch1mneyyy.dsh_app.phone.SensitiveWords
 import java.io.ByteArrayOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -30,7 +34,15 @@ internal class ImageGeometry(val originX: Int, val originY: Int, val scaleX: Flo
     }
 }
 
-internal class Shot(val bytes: ByteArray?, val mime: String?, val geometry: ImageGeometry?, val secure: Boolean, val error: String?)
+internal class Shot(
+    val bytes: ByteArray?,
+    val mime: String?,
+    val geometry: ImageGeometry?,
+    val secure: Boolean,
+    val error: String?,
+    /** Wall clock of the system's capture moment, so the model can tell a stale frame apart. */
+    val takenAtMs: Long? = null,
+)
 
 internal class ScreenShooter(private val service: AccessibilityService, private val overlay: ControlOverlay) {
     private val executor = Executors.newSingleThreadExecutor { r -> Thread(r, "dsh-a11y-shot") }
@@ -75,12 +87,15 @@ internal class ScreenShooter(private val service: AccessibilityService, private 
                 draw(scaled, marks, secrets, origin, sx, sy)
                 val out = ByteArrayOutputStream()
                 scaled.compress(Bitmap.CompressFormat.JPEG, 80, out)
-                return Shot(out.toByteArray(), "image/jpeg", ImageGeometry(origin.left, origin.top, sx, sy, w, h), false, null)
+                return Shot(
+                    out.toByteArray(), "image/jpeg", ImageGeometry(origin.left, origin.top, sx, sy, w, h), false, null,
+                    raw.takenAtMs,
+                )
             } finally { scaled.recycle() }
         } finally { bitmap.recycle() }
     }
 
-    private class Raw(val bitmap: Bitmap?, val secure: Boolean, val error: String?)
+    private class Raw(val bitmap: Bitmap?, val secure: Boolean, val error: String?, val takenAtMs: Long? = null)
 
     private fun capture(timeoutMs: Long, start: (AccessibilityService.TakeScreenshotCallback) -> Unit): Raw {
         if (Build.VERSION.SDK_INT < 30) return Raw(null, false, "unsupported")
@@ -91,15 +106,17 @@ internal class ScreenShooter(private val service: AccessibilityService, private 
             start(object : AccessibilityService.TakeScreenshotCallback {
                 override fun onSuccess(screenshot: AccessibilityService.ScreenshotResult) {
                     val buffer = screenshot.hardwareBuffer
+                    // The frame's own moment: elapsedRealtimeNanos since boot, mapped to the wall clock.
+                    val takenAt = System.currentTimeMillis() - (SystemClock.elapsedRealtimeNanos() - screenshot.timestamp) / 1_000_000
                     result = try {
                         val hardware = Bitmap.wrapHardwareBuffer(buffer, screenshot.colorSpace)
                         val software = hardware?.copy(Bitmap.Config.ARGB_8888, false)
                         hardware?.recycle()
                         // l10n:keep agent screenshot result
-                        Raw(software, false, if (software == null) "截图失败" else null)
+                        Raw(software, false, if (software == null) "截图失败" else null, takenAt)
                     } catch (_: Throwable) {
                         // l10n:keep agent screenshot result
-                        Raw(null, false, "截图失败")
+                        Raw(null, false, "截图失败", takenAt)
                     } finally { buffer.close() }
                     latch.countDown()
                 }
@@ -162,6 +179,9 @@ internal class ScreenShooter(private val service: AccessibilityService, private 
     }
 
     companion object {
+        /** `HH:mm:ss` for a wall-clock millisecond: the moment the system took the frame. */
+        fun clockText(ms: Long): String = SimpleDateFormat("HH:mm:ss", Locale.ROOT).format(Date(ms))
+
         /**
          * Password and verification-code fields anywhere in [windows], including ones the text
          * listing left out for length: the screenshot must not show what the text hides.
