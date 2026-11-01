@@ -5,7 +5,8 @@ name: publish-apk
 on:
   # 本机 POST 常被 TLS 拦截，推 tag 也能发布。
   push:
-    tags: ["v1.0.4-prompt-touch"]
+    # 任何 tag 都能发版：推 v* 就把那次提交的构建产物挂到 Release，得到免登录直链。
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       run_id:

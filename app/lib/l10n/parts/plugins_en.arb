@@ -371,5 +371,10 @@
         "type": "int"
       }
     }
-  }
+  },
+  "agentSnapshotSection": "AI support",
+  "agentSnapshotRowTitle": "Let the agent read the diagnostics",
+  "agentSnapshotRowSubtitle": "Refresh a snapshot of this phone (versions, device, runtime, connection, log tail) and write it into the runtime",
+  "agentSnapshotRowDone": "Snapshot refreshed — just ask the agent to “read the diagnostics”",
+  "agentSnapshotRowFailed": "Couldn't write the snapshot: the runtime may not be installed yet"
 }
