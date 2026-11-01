@@ -147,6 +147,8 @@ flutter:
     - assets/skills/dsh-go-ui/
     - assets/skills/dsh-go-plugin/
     - assets/skills/dsh-go-guide/
+    # Support skill: read the on-device snapshot (lib/diagnostics/agent_snapshot.dart).
+    - assets/skills/dsh-go-support/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

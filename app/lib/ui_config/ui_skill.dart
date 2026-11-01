@@ -41,6 +41,11 @@ const pluginSkillName = 'dsh-go-plugin';
 /// how to use the app. Read-only; installed and kept current the same way.
 const guideSkillName = 'dsh-go-guide';
 
+/// The fourth: support. Teaches the agent to read the snapshot the app writes
+/// (lib/diagnostics/agent_snapshot.dart) before it asks the person anything, and
+/// to hand back a paste-ready issue draft. Installed like the others.
+const supportSkillName = 'dsh-go-support';
+
 /// The managed line inside SKILL.md's front matter.
 const uiSkillManagedMarker = '# dsh-go:managed';
 
@@ -150,7 +155,11 @@ final uiSkillBundleLoaderProvider = Provider<UiSkillBundleLoader>((ref) => loadU
 
 /// The other skills installed next to [uiSkillName] on each engine start.
 final extraSkillLoadersProvider = Provider<List<UiSkillBundleLoader>>(
-  (ref) => [() => loadUiSkillBundle(null, pluginSkillName), () => loadUiSkillBundle(null, guideSkillName)],
+  (ref) => [
+    () => loadUiSkillBundle(null, pluginSkillName),
+    () => loadUiSkillBundle(null, guideSkillName),
+    () => loadUiSkillBundle(null, supportSkillName),
+  ],
 );
 
 /// Installs the skill each time the on-device engine comes up (and at launch

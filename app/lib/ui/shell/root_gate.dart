@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../diagnostics/agent_snapshot_provider.dart';
 import '../../launch/launch_state.dart';
 import '../../runtime/local_footprint.dart';
 import '../../runtime/runtime_bridge.dart';
@@ -293,6 +294,9 @@ class _RootGateState extends ConsumerState<RootGate> {
     // Each start of the on-device engine writes the bundled skills (dsh-go-ui,
     // dsh-go-plugin) into its skills folder, while they are still the app's.
     ref.listen(uiSkillAutoInstallProvider, (_, _) {});
+    // …and refreshes the agent's own diagnostics snapshot
+    // ($DSH_HOME/dsh-app/diagnostics.md), so a support question starts from facts.
+    ref.listen(agentDiagnosticsAutoWriteProvider, (_, _) {});
     // The rootfs came or went: files read straight from it look again.
     ref.listen(localRuntimeProvider.select((s) => s.status.installedVersion), (prev, next) {
       if (prev != next) ref.invalidate(guestFsProvider);
