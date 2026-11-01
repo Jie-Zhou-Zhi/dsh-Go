@@ -31734,4 +31734,9 @@ L10n lookupL10n(Locale locale) {
     'on GitHub with a reproducible sample app and the gen-l10n configuration '
     'that was used.',
   );
+  String get agentSnapshotSection;
+  String get agentSnapshotRowTitle;
+  String get agentSnapshotRowSubtitle;
+  String get agentSnapshotRowDone;
+  String get agentSnapshotRowFailed;
 }

@@ -17489,4 +17489,14 @@ class L10nZh extends L10n {
   String webConnectHostFirst(String name) {
     return '还没连上「$name」，连上后再打开网页版';
   }
+  @override
+  String get agentSnapshotSection => "AI 排障";
+  @override
+  String get agentSnapshotRowTitle => "让 AI 看诊断";
+  @override
+  String get agentSnapshotRowSubtitle => "刷新一份本机诊断（版本、设备、运行时、连接、日志尾）写进运行环境，之后直接问 AI 就行";
+  @override
+  String get agentSnapshotRowDone => "诊断快照已刷新，直接问 AI「看下诊断」就行";
+  @override
+  String get agentSnapshotRowFailed => "没能写入诊断快照：运行环境可能还没装好";
 }

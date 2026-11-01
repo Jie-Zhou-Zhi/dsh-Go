@@ -18428,4 +18428,14 @@ class L10nEn extends L10n {
   String webConnectHostFirst(String name) {
     return 'Connect to “$name” to open DSH Web';
   }
+  @override
+  String get agentSnapshotSection => "AI support";
+  @override
+  String get agentSnapshotRowTitle => "Let the agent read the diagnostics";
+  @override
+  String get agentSnapshotRowSubtitle => "Refresh a snapshot of this phone (versions, device, runtime, connection, log tail) and write it into the runtime";
+  @override
+  String get agentSnapshotRowDone => "Snapshot refreshed — just ask the agent to “read the diagnostics”";
+  @override
+  String get agentSnapshotRowFailed => "Couldn't write the snapshot: the runtime may not be installed yet";
 }

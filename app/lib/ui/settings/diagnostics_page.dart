@@ -7,6 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
+import '../../diagnostics/agent_snapshot.dart';
+import '../../diagnostics/agent_snapshot_provider.dart';
 import '../../diagnostics/redact.dart';
 import '../../runtime/runtime_state.dart';
 import '../../runtime/runtime_bridge.dart';
@@ -79,6 +81,19 @@ class DiagnosticsPage extends ConsumerWidget {
         showBriefNotice(context, l10n.pluginsDiagnosticsCopied);
       }
     }
+    // 「让 AI 看诊断」: rewrite $DSH_HOME/dsh-app/diagnostics.md now, so the agent
+    // reads this phone's facts instead of asking the person to describe them.
+    Future<void> refreshAgentSnapshot() async {
+      final result = await ref.read(agentDiagnosticsWriterProvider)();
+      if (!context.mounted) return;
+      showBriefNotice(
+        context,
+        switch (result) {
+          AgentSnapshotWrite.written || AgentSnapshotWrite.unchanged => l10n.agentSnapshotRowDone,
+          AgentSnapshotWrite.noHome || AgentSnapshotWrite.failed => l10n.agentSnapshotRowFailed,
+        },
+      );
+    }
 
     return AppPage.list(
       title: l10n.pluginsDiagnostics,
@@ -107,6 +122,18 @@ class DiagnosticsPage extends ConsumerWidget {
             InfoRow(label: l10n.pluginsAddress, value: status.baseUrl ?? '—', mono: true),
             InfoRow(label: l10n.pluginsClient, value: connection),
             InfoRow(label: 'API Key', value: settings.hasApiKey ? l10n.pluginsConfigured : l10n.commonNotSet),
+          ],
+        ),
+        SettingsSection(
+          title: l10n.agentSnapshotSection,
+          children: [
+            ListPageRow(
+              icon: AppIcons.askAi,
+              title: l10n.agentSnapshotRowTitle,
+              subtitle: l10n.agentSnapshotRowSubtitle,
+              subtitleMaxLines: 2,
+              onTap: refreshAgentSnapshot,
+            ),
           ],
         ),
         DiagnosticsExportCard(
