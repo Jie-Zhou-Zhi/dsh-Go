@@ -15,9 +15,9 @@ on:
         options: [arm64, x64]
         default: arm64
       signing:
-        description: "签名方式（debug＝测试签名，可与正式包共存）"
+        description: "签名方式：release＝正式密钥，test＝固定测试密钥（可覆盖升级），debug＝runner 临时密钥（每次都要卸载重装）"
         type: choice
-        options: [release, debug]
+        options: [release, test, debug]
         default: release
 
 concurrency:
@@ -60,10 +60,10 @@ jobs:
       - name: 恢复签名密钥
         if: ${{ inputs.signing != 'debug' }}
         env:
-          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KS_KEYPASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KS_B64: ${{ inputs.signing == 'test' && secrets.TEST_ANDROID_KEYSTORE_BASE64 || secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ inputs.signing == 'test' && secrets.TEST_ANDROID_KEYSTORE_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ inputs.signing == 'test' && secrets.TEST_ANDROID_KEY_ALIAS || secrets.ANDROID_KEY_ALIAS }}
+          KS_KEYPASS: ${{ inputs.signing == 'test' && secrets.TEST_ANDROID_KEY_PASSWORD || secrets.ANDROID_KEY_PASSWORD }}
         run: |
           # secrets 不能用在 if: 里，只能这样判空。
           if [ -z "$KS_B64" ]; then
