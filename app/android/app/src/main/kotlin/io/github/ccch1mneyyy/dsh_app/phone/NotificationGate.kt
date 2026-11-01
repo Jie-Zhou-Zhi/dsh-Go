@@ -145,10 +145,9 @@ class NotificationGate(
                     .setContentTitle(PhonePromptUi.title(app, content.kind)).build())
                 .setContentIntent(open).setDeleteIntent(broadcast("dismiss", 7)).setAutoCancel(false)
             if (Build.VERSION.SDK_INT >= 26) b.setTimeoutAfter(p.ticket.remainingMs)
-            // Native task/app waiver replaces its ordinary allow in the three notification slots.
-            val choices = content.choices.let { all ->
-                if (all.size > 3) all.filterNot { it == PromptChoice.ALLOW_ONCE } else all
-            }
+            // Three slots at most: keep the refusal and both waivers, drop 「终止此次任务」. It stays
+            // reachable on the card, whereas a missing approval leaves the shade with no way in.
+            val choices = NotificationActions.of(content.choices)
             choices.forEachIndexed { index, choice ->
                 val pi = if (choice == PromptChoice.OPEN) open else broadcast(choice.name, index)
                 b.addAction(Notification.Action.Builder(null, PhonePromptUi.label(app, choice), pi).build())
