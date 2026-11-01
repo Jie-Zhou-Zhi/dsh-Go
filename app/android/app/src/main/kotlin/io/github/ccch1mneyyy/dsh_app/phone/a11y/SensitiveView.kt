@@ -13,16 +13,16 @@ package io.github.ccch1mneyyy.dsh_app.phone.a11y
 
 object SensitiveView {
     /** Nodes the app/platform marked data-sensitive (API 34+). */
-    fun marked(windows: List<UiWindow>): Int = windows.sumOf { w -> w.root?.let(::markedOf) ?: 0 }
+    fun marked(windows: List<UiWindow>): Int = windows.sumOf { w -> w.root?.let { markedOf(it) } ?: 0 }
 
     private fun markedOf(node: UiNode): Int =
-        (if (node.dataSensitive) 1 else 0) + node.children.sumOf(::markedOf)
+        (if (node.dataSensitive) 1 else 0) + node.children.sumOf { markedOf(it) }
 
     /** Nodes carrying text or a description; below [ScreenFormat.POOR_TREE] the page reads as empty. */
-    fun textNodes(windows: List<UiWindow>): Int = windows.sumOf { w -> w.root?.let(::textOf) ?: 0 }
+    fun textNodes(windows: List<UiWindow>): Int = windows.sumOf { w -> w.root?.let { textOf(it) } ?: 0 }
 
     private fun textOf(node: UiNode): Int =
-        (if (!node.text.isNullOrBlank() || !node.desc.isNullOrBlank()) 1 else 0) + node.children.sumOf(::textOf)
+        (if (!node.text.isNullOrBlank() || !node.desc.isNullOrBlank()) 1 else 0) + node.children.sumOf { textOf(it) }
 
     /**
      * The page labels its content as sensitive: Android 14+ filtering, not a canvas app.

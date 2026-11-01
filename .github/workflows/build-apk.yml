@@ -201,14 +201,19 @@ jobs:
 
       - name: 构建 APK
         env:
-          ORG_GRADLE_PROJECT_dshAppId: ${{ inputs.app_id || 'io.github.ccch1mneyyy.dsh_app' }}
-        run: tooling/build-apk.sh -f ${{ inputs.flavor || 'arm64' }}
+          # push 触发时没有 inputs：默认给一个独立的测试包名，和官方包（以及
+          # 正式证书签的 .local 包）互不覆盖，装了不冲突、也不会顶掉用户数据。
+          ORG_GRADLE_PROJECT_dshAppId: ${{ inputs.app_id || 'io.github.ccch1mneyyy.dshgo.test' }}
+        run: |
+          echo "安装包名：${ORG_GRADLE_PROJECT_dshAppId}"
+          tooling/build-apk.sh -f ${{ inputs.flavor || 'arm64' }}
 
       - name: 确认签名证书
         if: always()
         run: |
           apk=$(find app/build/app/outputs/flutter-apk -name '*.apk' | head -1)
           [ -n "$apk" ] || exit 0
+          echo "期望（测试证书 dshtest）: 67:F6:99:99:48:A6:05:97:FB:C2:BB:62:95:85:72:67:71:B8:76:04:F5:87:98:EF:72:EA:0C:45:11:E6:F3:D6"
           AS="$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools" -name apksigner -type f | sort | tail -1)"
           "$AS" verify --print-certs "$apk" | grep -i "SHA-256" | head -2 || true
 
