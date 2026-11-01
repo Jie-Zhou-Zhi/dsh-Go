@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       app_id:
-        description: "安装包名（默认独立测试包，和官方包并存；要覆盖升级才填官方名）"
+        description: "安装包名（留空＝官方名 io.github.ccch1mneyyy.dsh_app，同 main 分支）"
         required: false
-        default: "io.github.ccch1mneyyy.dshgo.test"
+        default: "io.github.ccch1mneyyy.dsh_app"
       flavor:
         description: "架构"
         type: choice
@@ -201,9 +201,8 @@ jobs:
 
       - name: 构建 APK
         env:
-          # push 触发时没有 inputs：默认给一个独立的测试包名，和官方包（以及
-          # 正式证书签的 .local 包）互不覆盖，装了不冲突、也不会顶掉用户数据。
-          ORG_GRADLE_PROJECT_dshAppId: ${{ inputs.app_id || 'io.github.ccch1mneyyy.dshgo.test' }}
+          # 和 main 分支一致：官方包名。
+          ORG_GRADLE_PROJECT_dshAppId: ${{ inputs.app_id || 'io.github.ccch1mneyyy.dsh_app' }}
         run: |
           echo "安装包名：${ORG_GRADLE_PROJECT_dshAppId}"
           tooling/build-apk.sh -f ${{ inputs.flavor || 'arm64' }}
