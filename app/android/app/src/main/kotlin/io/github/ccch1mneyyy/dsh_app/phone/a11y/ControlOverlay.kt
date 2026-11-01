@@ -884,22 +884,27 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
      * A confirm button that only real fingers can press:
      *  - not in its first [ARM_MS] (a tap already in flight when the card appeared);
      *  - not while this service is injecting a gesture (InjectGuard);
-     *  - not when the touch came through another window on top (tapjacking, FLAG_WINDOW_IS_OBSCURED);
      *  - not when it looks like an accessibility service's stroke: no pointing tool at all
      *    ([MotionFacts.injectedStroke]) — unless TalkBack-style touch exploration is on, whose
      *    double-tap takes that same path;
      *  - ACTION_CLICK from any accessibility service is refused unless touch exploration is on.
      * And the Actuator makes the overlay untouchable for every stroke it injects.
      * Measured on the API 35 emulator (debug probe): our dispatchGesture tap = flags 0x800,
-     * device -1, tool UNKNOWN; a hardware-touchscreen tap = flags 0x800 (!), device 12, tool FINGER.
-     * So 0x800 alone would lock real fingers out — but the device id does not separate them
-     * either: some ROMs report `deviceId <= 0` for real touches over an accessibility overlay,
-     * which silently refused every press. Tool type is the fact that holds on both.
+     * device -1, tool UNKNOWN; a hardware-touchscreen tap = flags 0x800 (!), device 12, tool FINGER;
+     * shell `input tap` = flags 0, device -1, tool FINGER. So neither the flag nor the device id
+     * separates them — tool type is the fact that holds on both.
+     *
+     * Obscured is deliberately not a reason to refuse (and filterTouchesWhenObscured stays off):
+     * the system raises FLAG_WINDOW_IS_OBSCURED / FLAG_WINDOW_IS_PARTIALLY_OBSCURED for overlays
+     * whenever another app, a landscape game or the immersive-mode decor sits above the touch, even
+     * though the person can see and aim at the button. Treating that as tapjacking made every
+     * approve / 继续 key dead until the countdown expired; the injected-stroke checks above are the
+     * ones this overlay can actually verify.
      */
     private inner class GuardedButton(context: Context, private val armedAt: Long) : TextView(context) {
         private var rejected = false
 
-        init { filterTouchesWhenObscured = true; isClickable = true; isFocusable = true; gravity = Gravity.CENTER }
+        init { isClickable = true; isFocusable = true; gravity = Gravity.CENTER }
 
         override fun dispatchTouchEvent(event: MotionEvent): Boolean {
             if (event.actionMasked == MotionEvent.ACTION_DOWN) {
@@ -927,7 +932,6 @@ internal class ControlOverlay(private val service: AccessibilityService) : UserG
         private fun rejectReason(event: MotionEvent): String? = when {
             SystemClock.uptimeMillis() < armedAt -> "too-early"
             InjectGuard.active() && !debugIgnoreInjectGuard -> "injecting"
-            MotionFacts.obscured(event) -> "obscured"
             MotionFacts.injectedStroke(event) && !a11y.isTouchExplorationEnabled -> "accessibility-injected"
             else -> null
         }
