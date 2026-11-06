@@ -20,8 +20,12 @@ on:
         options: [release, test, debug]
         default: release
 
+  # 本机 POST 常被 TLS 拦截，推这个分支即构建；未给 inputs 时用下面的兜底值。
+  push:
+    branches: [work/local-build]
+
 concurrency:
-  group: build-apk-${{ github.ref }}-${{ inputs.flavor }}
+  group: build-apk-${{ github.ref }}-${{ inputs.flavor || 'arm64' }}
   cancel-in-progress: true
 
 jobs:
@@ -120,7 +124,7 @@ jobs:
       # 索引并核对 deb 的 sha256，所以这里直接从索引取当前版本，钉死的默认值只作兜底。
       - name: 解析 Termux 包版本
         run: |
-          case "${{ inputs.flavor }}" in
+          case "${{ inputs.flavor || 'arm64' }}" in
             arm64) arch=aarch64 ;;
             x64) arch=x86_64 ;;
             *) echo "unknown flavor"; exit 1 ;;
@@ -146,10 +150,10 @@ jobs:
       - name: 生成 Linux 运行时（最慢的一步）
         run: |
           # build-runtime.sh 认的是 ABI 名（arm64-v8a / x86_64），不是 flavor 名。
-          case "${{ inputs.flavor }}" in
+          case "${{ inputs.flavor || 'arm64' }}" in
             arm64) abi=arm64-v8a ;;
             x64) abi=x86_64 ;;
-            *) echo "unknown flavor: ${{ inputs.flavor }}"; exit 1 ;;
+            *) echo "unknown flavor: ${{ inputs.flavor || 'arm64' }}"; exit 1 ;;
           esac
           echo "runtime ABI: $abi"
           runtime/build-runtime.sh "$abi"
@@ -160,8 +164,8 @@ jobs:
 
       - name: 构建 APK
         env:
-          ORG_GRADLE_PROJECT_dshAppId: ${{ inputs.app_id }}
-        run: tooling/build-apk.sh -f ${{ inputs.flavor }}
+          ORG_GRADLE_PROJECT_dshAppId: ${{ inputs.app_id || 'io.github.ccch1mneyyy.dshgo.local' }}
+        run: tooling/build-apk.sh -f ${{ inputs.flavor || 'arm64' }}
 
       - name: 确认签名证书
         if: always()
@@ -179,7 +183,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: dsh-go-${{ inputs.flavor }}-apk
+          name: dsh-go-${{ inputs.flavor || 'arm64' }}-apk
           path: |
             app/build/app/outputs/flutter-apk/*.apk
             dist/*.apk
