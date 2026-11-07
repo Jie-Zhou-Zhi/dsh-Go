@@ -85,6 +85,8 @@ class PrivilegedDisplayCore(private val context: Context) {
                 response.putBoolean(Proto.OK, true)
                 response.putInt(Proto.UID, Process.myUid())
                 response.putString("revision", Proto.REVISION)
+                response.putInt(Proto.SDK, Build.VERSION.SDK_INT)
+                response.putBundle(Proto.CAPABILITIES, capabilities())
                 return response
             }
             if (op == Proto.OP_DESTROY) {
@@ -179,6 +181,21 @@ class PrivilegedDisplayCore(private val context: Context) {
         }
     }
 
+    /**
+     * What this engine can attempt here, by part. A name only: the app reports it and never treats
+     * an experimental part as supported. Same source as [BackgroundPolicy.profile].
+     */
+    private fun capabilities(): Bundle {
+        val profile = BackgroundPolicy.profile(Build.VERSION.SDK_INT)
+        return Bundle().apply {
+            putString("display", profile.display.name.lowercase())
+            putString("launch", profile.launch.name.lowercase())
+            putString("inject", profile.inject.name.lowercase())
+            putString("tree", profile.tree.name.lowercase())
+            putString("ime", profile.ime.name.lowercase())
+        }
+    }
+
     /** Test a real input receiver, not an empty display. Never launches or touches a user app. */
     private fun gateProbe(response: Bundle) {
         // A settings probe must not replace or release an active task's display.
@@ -223,12 +240,18 @@ class PrivilegedDisplayCore(private val context: Context) {
         val w = size[0]; val h = size[1]
         val ir = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
         try {
-            // Every flag must resolve; never silently make a focus-stealing display on an old ROM.
+            // Only flags this Android version has are asked for, and each one must still resolve:
+            // never silently make a focus-stealing display, and never fold a 14-only list below 14.
             // SECURE is deliberately not requested, so protected content stays protected.
             val flags = try {
-                FLAG_NAMES.fold(0) { bits, name ->
+                BackgroundPolicy.flagNames(Build.VERSION.SDK_INT).fold(0) { bits, name ->
                     bits or DisplayManager::class.java.getDeclaredField("VIRTUAL_DISPLAY_FLAG_$name").getInt(null)
                 }
+            } catch (e: NoSuchFieldException) {
+                // Name the one flag the ROM is missing: "trusted" reads better than "unsupported".
+                val missing = e.message.orEmpty()
+                    .substringAfterLast("VIRTUAL_DISPLAY_FLAG_").substringBefore(' ').lowercase()
+                throw Fault("displayUnsupported:" + missing.ifEmpty { "flag" })
             } catch (_: ReflectiveOperationException) { throw Fault("displayUnsupported") }
             // Presentation requires this flag for the gate's inert receiver. Actual tasks keep
             // their existing display flags; this tests delivery, not every target app's policy.
@@ -814,7 +837,9 @@ class PrivilegedDisplayCore(private val context: Context) {
         private var automation: UiAutomation? = null
 
         fun open(display: Display): UiAutomation {
-            if (Build.VERSION.SDK_INT < 34) throw Fault("textConnectionUnavailable")
+            // A display-bound UiAutomation is 14+: below that the element tree has no read path yet,
+            // and the reason must say so rather than reuse the "service unavailable" text.
+            if (Build.VERSION.SDK_INT < BackgroundPolicy.FULL_SDK) throw Fault("treeNeedsAndroid14")
             val connectionType = Class.forName("android.app.IUiAutomationConnection")
             val connection = Proxy.newProxyInstance(connectionType.classLoader, arrayOf(connectionType)) { proxy, method, args ->
                 when (method.name) {
@@ -868,9 +893,6 @@ class PrivilegedDisplayCore(private val context: Context) {
 
     companion object {
         private val PACKAGE = Regex("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z0-9_]+)+")
-        private val FLAG_NAMES = listOf(
-            "PUBLIC", "OWN_CONTENT_ONLY", "SUPPORTS_TOUCH", "DESTROY_CONTENT_ON_REMOVAL",
-            "TRUSTED", "OWN_FOCUS", "STEAL_TOP_FOCUS_DISABLED")
         private val KEYS = mapOf(
             "back" to KeyEvent.KEYCODE_BACK, "home" to KeyEvent.KEYCODE_HOME,
             "enter" to KeyEvent.KEYCODE_ENTER, "delete" to KeyEvent.KEYCODE_DEL,

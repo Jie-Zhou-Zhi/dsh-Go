@@ -66,6 +66,9 @@ object Proto {
     const val ERROR = "error"
     const val DISPLAY_ID = "displayId"
     const val UID = "uid"
+    /** probe: the engine's Android version, and which parts of the mode it can attempt here. */
+    const val SDK = "sdk"
+    const val CAPABILITIES = "capabilities"
     const val SECURE = "secure"
     /** Optional observation after an accepted action; no image or element content accompanies it. */
     const val FRAME_NOT_READY = "frameNotReady"
@@ -104,66 +107,75 @@ object Reasons {
 
     fun withDetail(reason: String, detail: String?): String = reason + detail?.let { "（$it）" }.orEmpty()
 
-    fun of(code: String?): String = when (code) {
-        null -> ""
-        // l10n:keep privileged protocol
-        "identityChanged" -> "特权通道身份已改变，请重新开始任务"
-        // l10n:keep privileged protocol
-        "permissionRequired", "channelDisabled" -> "不打扰模式未启用或授权已撤销"
-        // l10n:keep privileged protocol
-        "systemOperationDenied" -> "系统拒绝了后台屏操作"
-        // l10n:keep privileged protocol
-        "launchDenied" -> "系统拒绝在后台屏启动此应用"
-        // l10n:keep privileged protocol
-        "launchCancelled" -> "后台屏应用启动请求已取消，未自动重试"
-        // l10n:keep privileged protocol
-        "notLaunchable" -> "此应用没有可启动的界面"
-        // l10n:keep privileged protocol
-        "displayUnsupported" -> "此系统不支持所需的独立焦点虚拟屏，未改用主屏"
-        // l10n:keep privileged protocol
-        "displayReleaseFailed" -> "未收到后台屏资源释放的完整回执"
-        // l10n:keep privileged protocol
-        "displayMissing" -> "本次任务还没有后台屏，请先启动目标应用"
-        // l10n:keep privileged protocol
-        "displayTargetChanged" -> "后台屏前台任务不属于目标应用，未继续操作"
-        // l10n:keep privileged protocol
-        "secureWindow" -> "此页面受保护（支付或密码），请交还用户在主屏完成"
-        // l10n:keep privileged protocol
-        "frameNotReady" -> "画面尚未就绪；稍后仅重新读屏，不要重放刚才动作"
-        // l10n:keep privileged protocol
-        "staleSnapshot" -> "后台屏快照已过期，请重新观察后再操作"
-        // l10n:keep privileged protocol
-        "elementMissing" -> "该元素已不在后台屏当前界面上"
-        // l10n:keep privileged protocol
-        "textUnsupported" -> "此输入框不支持直接写入文字"
-        // l10n:keep privileged protocol
-        "textConnectionUnavailable" -> "后台屏文字输入服务不可用"
-        // l10n:keep privileged protocol
-        "textFocusMissing" -> "后台屏上没有已聚焦的输入框"
-        // l10n:keep privileged protocol
-        "textTargetChanged" -> "后台屏输入框或焦点已改变，未继续输入"
-        // l10n:keep privileged protocol
-        "textRequiresManual" -> "此输入框需要用户手动输入"
-        // l10n:keep privileged protocol
-        "textReadbackMismatch" -> "文字已提交，但输入框内容与预期不一致"
-        // l10n:keep privileged protocol
-        "inputApiUnavailable" -> "此系统没有可用的后台屏输入接口，无法点按或输入"
-        // l10n:keep privileged protocol
-        "inputRejected" -> "未能确认后台屏输入结果；动作可能已发出，请重新观察，不要重复动作"
-        // l10n:keep privileged protocol
-        "screenshotFailed" -> "未取得后台屏画面，可重新观察；不要重放已派发的动作"
-        // l10n:keep privileged protocol
-        "treeUnavailable" -> "未能读取后台屏控件树，请重新观察"
-        // l10n:keep privileged protocol
-        "locked" -> "设备已锁定，后台屏操作已停止"
-        // l10n:keep privileged protocol
-        "invalidArguments" -> "后台屏动作参数无效"
-        // l10n:keep privileged protocol
-        "cancelled" -> "后台屏操作已停止，已派发动作不代表已撤销"
-        // l10n:keep privileged protocol
-        "timeout" -> "后台屏操作超时，已派发动作不代表已撤销"
-        // l10n:keep privileged protocol
-        else -> "不打扰模式暂不可用，请检查授权、服务和设备支持情况"
+    /**
+     * One sentence per part. A code may carry a detail after ':' — the display flag a ROM lacks —
+     * which picks the part's sentence and stays out of what the model reads.
+     */
+    fun of(code: String?): String {
+        val base = code?.substringBefore(':')?.takeUnless { it.isEmpty() }
+        return when (base) {
+            null -> ""
+            // l10n:keep privileged protocol
+            "identityChanged" -> "特权通道身份已改变，请重新开始任务"
+            // l10n:keep privileged protocol
+            "permissionRequired", "channelDisabled" -> "不打扰模式未启用或授权已撤销"
+            // l10n:keep privileged protocol
+            "systemOperationDenied" -> "系统拒绝了后台屏操作"
+            // l10n:keep privileged protocol
+            "launchDenied" -> "系统拒绝在后台屏启动此应用"
+            // l10n:keep privileged protocol
+            "launchCancelled" -> "后台屏应用启动请求已取消，未自动重试"
+            // l10n:keep privileged protocol
+            "notLaunchable" -> "此应用没有可启动的界面"
+            // l10n:keep privileged protocol
+            "displayUnsupported" -> "此系统不支持所需的独立焦点虚拟屏，未改用主屏"
+            // l10n:keep privileged protocol
+            "displayReleaseFailed" -> "未收到后台屏资源释放的完整回执"
+            // l10n:keep privileged protocol
+            "displayMissing" -> "本次任务还没有后台屏，请先启动目标应用"
+            // l10n:keep privileged protocol
+            "displayTargetChanged" -> "后台屏前台任务不属于目标应用，未继续操作"
+            // l10n:keep privileged protocol
+            "secureWindow" -> "此页面受保护（支付或密码），请交还用户在主屏完成"
+            // l10n:keep privileged protocol
+            "frameNotReady" -> "画面尚未就绪；稍后仅重新读屏，不要重放刚才动作"
+            // l10n:keep privileged protocol
+            "staleSnapshot" -> "后台屏快照已过期，请重新观察后再操作"
+            // l10n:keep privileged protocol
+            "elementMissing" -> "该元素已不在后台屏当前界面上"
+            // l10n:keep privileged protocol
+            "textUnsupported" -> "此输入框不支持直接写入文字"
+            // l10n:keep privileged protocol
+            "textConnectionUnavailable" -> "后台屏文字输入服务不可用"
+            // l10n:keep privileged protocol
+            "treeNeedsAndroid14" -> "这台设备读不到后台屏的元素（Android 14 起支持），只能看截图"
+            // l10n:keep privileged protocol
+            "textFocusMissing" -> "后台屏上没有已聚焦的输入框"
+            // l10n:keep privileged protocol
+            "textTargetChanged" -> "后台屏输入框或焦点已改变，未继续输入"
+            // l10n:keep privileged protocol
+            "textRequiresManual" -> "此输入框需要用户手动输入"
+            // l10n:keep privileged protocol
+            "textReadbackMismatch" -> "文字已提交，但输入框内容与预期不一致"
+            // l10n:keep privileged protocol
+            "inputApiUnavailable" -> "此系统没有可用的后台屏输入接口，无法点按或输入"
+            // l10n:keep privileged protocol
+            "inputRejected" -> "未能确认后台屏输入结果；动作可能已发出，请重新观察，不要重复动作"
+            // l10n:keep privileged protocol
+            "screenshotFailed" -> "未取得后台屏画面，可重新观察；不要重放已派发的动作"
+            // l10n:keep privileged protocol
+            "treeUnavailable" -> "未能读取后台屏控件树，请重新观察"
+            // l10n:keep privileged protocol
+            "locked" -> "设备已锁定，后台屏操作已停止"
+            // l10n:keep privileged protocol
+            "invalidArguments" -> "后台屏动作参数无效"
+            // l10n:keep privileged protocol
+            "cancelled" -> "后台屏操作已停止，已派发动作不代表已撤销"
+            // l10n:keep privileged protocol
+            "timeout" -> "后台屏操作超时，已派发动作不代表已撤销"
+            // l10n:keep privileged protocol
+            else -> "不打扰模式暂不可用，请检查授权、服务和设备支持情况"
+        }
     }
 }
 

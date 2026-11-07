@@ -21,6 +21,8 @@ import io.github.ccch1mneyyy.dsh_app.phone.TargetInfo
 class BackgroundDisplay(
     private val channelProvider: () -> PrivilegedChannel?,
     private val releaseChannelProvider: () -> PrivilegedChannel?,
+    /** Whether this device may run the mode at all (the supported floor, or an explicit 13 opt-in). */
+    private val androidOk: () -> Boolean = { BackgroundPolicy.supported(Build.VERSION.SDK_INT) },
 ) : PhoneDriver {
 
     override val screen: PhoneScreen = PhoneScreen.BACKGROUND
@@ -32,7 +34,7 @@ class BackgroundDisplay(
     private var previousLabels: Set<String> = emptySet()
 
     override fun availability(): Availability {
-        if (Build.VERSION.SDK_INT < BackgroundPolicy.MIN_SDK)
+        if (!androidOk())
             // l10n:keep agent screen protocol
             return Availability(false, "不打扰模式需要 Android 14 或更高版本")
         val channel = channelProvider()

@@ -180,12 +180,40 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
     final open = _open ?? (bg.effectiveReady ? PhonePrivilegedMode.off : using);
     // Old native modules suggest nothing.
     final suggested = bg.privileged?.recommendedMode;
+    // Android 13 and friends: worth an attempt, but the system lacks own focus and the tree.
+    final caps = bg.privileged?.capabilities;
+    final experiment = caps != null && caps.experimentalRange;
 
     return AppPage.list(
       title: l10n.phoneDndTitle,
       subtitle: Text(l10n.phoneDndSubtitle),
       children: [
-        if (!bg.androidOk) PhoneNote(tone: NoteTone.warn, text: l10n.phoneDndUnsupported),
+        if (!bg.androidOk && !experiment) PhoneNote(tone: NoteTone.warn, text: l10n.phoneDndUnsupported),
+        // The experiment is offered where the platform can attempt it, and says what is missing.
+        if (experiment) ...[
+          ListPageCard(
+            margin: _groupMargin,
+            children: [
+              MergeSemantics(
+                child: ListPageRow(
+                  // Lined up with the channel rows below: one consent, one switch.
+                  leading: const SizedBox(),
+                  title: l10n.phoneDndExperimentalTitle,
+                  titleMaxLines: 2,
+                  subtitle: caps!.experimental
+                      ? l10n.phoneDndExperimentalOn
+                      : l10n.phoneDndExperimentalOff,
+                  subtitleMaxLines: 8,
+                  onTap: _busy ? null : () => _experiment(!caps!.experimental),
+                  trailing: Switch(
+                    value: caps!.experimental,
+                    onChanged: _busy ? null : _experiment,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
         if (using != PhonePrivilegedMode.off) ...[
           ListPageCard(
             margin: _groupMargin,
@@ -235,6 +263,9 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
       ],
     );
   }
+
+  /// The Android 13 opt-in: only this switch writes it, and it never selects a channel.
+  void _experiment(bool on) => unawaited(_run(() => _phone.setDndExperimental(on)));
 
   /// 保持 for the channel in use, off until the person turns it on: this
   /// switch is the only thing that writes it. The line under it says what

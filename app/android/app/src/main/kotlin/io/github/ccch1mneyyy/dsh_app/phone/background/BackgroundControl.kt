@@ -36,8 +36,9 @@ class BackgroundControl private constructor(context: Context) {
     private val keepGuard = Any()
     private val preferenceGuard = Any()
     private val keepPrefs = app.getSharedPreferences("phone-privileged-keep", Context.MODE_PRIVATE)
+    // Full support only: an experimental Android 13 attempt is never restored by itself.
     private val keep = PrivilegedKeepState(keepPrefs.getString("keptMode", "off") ?: "off",
-        PhoneControl.switchedOn(app), Build.VERSION.SDK_INT >= BackgroundPolicy.MIN_SDK)
+        PhoneControl.switchedOn(app), BackgroundPolicy.supported(Build.VERSION.SDK_INT))
     private val recovery = Executors.newSingleThreadExecutor { r -> Thread(r, "dsh-privileged-keep").apply { isDaemon = true } }
     // Pairing from the App and from the notification share one queue: an older attempt can't
     // stop a newer one's discovery, and its result can't replace the newer one's notification.
@@ -65,7 +66,46 @@ class BackgroundControl private constructor(context: Context) {
 
     private fun notifyChanged() = runCatching { onStatusChanged() }
 
-    private fun androidOk(): Boolean = Build.VERSION.SDK_INT >= BackgroundPolicy.MIN_SDK
+    /**
+     * Whether the mode may be used at all here: the supported floor, or an Android 13 experiment the
+     * person turned on explicitly. Experimental stays opt-in — nothing enables it by itself.
+     */
+    private fun androidOk(): Boolean =
+        BackgroundPolicy.supported(Build.VERSION.SDK_INT) || experimentalAllowed()
+
+    /** Off unless the person opted in; meaningless outside the experimental range. */
+    fun experimentalAllowed(): Boolean = BackgroundPolicy.canProbe(Build.VERSION.SDK_INT) &&
+        !BackgroundPolicy.supported(Build.VERSION.SDK_INT) && keepPrefs.getBoolean(EXPERIMENTAL, false)
+
+    /** Persists the opt-in. Turning it off below the supported floor also drops the selection. */
+    private fun setExperimental(on: Boolean): Boolean {
+        synchronized(preferenceGuard) {
+            if (!keepPrefs.edit().putBoolean(EXPERIMENTAL, on).commit()) return false
+        }
+        if (!on && mode != "off" && !BackgroundPolicy.supported(Build.VERSION.SDK_INT)) {
+            endTask()
+            disconnectAll { true }
+            synchronized(keepGuard) { keep.select("off") }
+            gate.reset()
+            updateKeepListeners()
+        }
+        return true
+    }
+
+    /** What each part of the mode can do on this Android version, for the status and the page. */
+    private fun capabilitiesMap(): Map<String, Any?> {
+        val profile = BackgroundPolicy.profile(Build.VERSION.SDK_INT)
+        return mapOf(
+            "sdk" to Build.VERSION.SDK_INT,
+            "display" to profile.display.name.lowercase(),
+            "launch" to profile.launch.name.lowercase(),
+            "inject" to profile.inject.name.lowercase(),
+            "tree" to profile.tree.name.lowercase(),
+            "ime" to profile.ime.name.lowercase(),
+            "supported" to profile.supported,
+            "experimental" to experimentalAllowed(),
+        )
+    }
 
     // ---- status ------------------------------------------------------------
 
@@ -93,6 +133,7 @@ class BackgroundControl private constructor(context: Context) {
             "root" to rootStatus.map(),
             "privileged" to mapOf(
                 "v" to 1,
+                "capabilities" to capabilitiesMap(),
                 "mode" to mode,
                 "ready" to (reason == null),
                 "reason" to reason,
@@ -158,7 +199,13 @@ class BackgroundControl private constructor(context: Context) {
 
     // ---- actions -----------------------------------------------------------
 
-    fun setBackgroundMode(newMode: String, mayStart: () -> Boolean = { true }): Map<String, Any?> {
+    fun setBackgroundMode(
+        newMode: String,
+        mayStart: () -> Boolean = { true },
+        experimental: Boolean? = null,
+    ): Map<String, Any?> {
+        // The opt-in is written before the mode is judged, so this same call can enable it.
+        if (experimental != null && !setExperimental(experimental)) return keepFailure("persistenceFailed")
         val provider = shizuku.status().provider
         val selected = PrivilegedPathPolicy.canonicalMode(newMode, provider)
             ?: return mapOf("ok" to false, "reason" to AppStrings.get(app, R.string.background_unknown_mode))
@@ -319,6 +366,7 @@ class BackgroundControl private constructor(context: Context) {
             val d = BackgroundDisplay(
                 channelProvider = { activeChannel() },
                 releaseChannelProvider = { channel?.takeIf { it.alive() } },
+                androidOk = { androidOk() },
             ).also { driver = it }
             // Publish the pending owner before checking cancellation: a stop
             // either records the ended ID first, or sees this owner and releases
@@ -628,6 +676,9 @@ class BackgroundControl private constructor(context: Context) {
     companion object {
         /** UserHandle.PER_USER_RANGE: a uid's user is uid / this. */
         private const val PER_USER_RANGE = 100_000
+
+        /** Android 13 attempt opt-in, per person, in the same prefs file as the kept mode. */
+        private const val EXPERIMENTAL = "experimental13"
 
         @Volatile private var instance: BackgroundControl? = null
         fun get(context: Context): BackgroundControl =
