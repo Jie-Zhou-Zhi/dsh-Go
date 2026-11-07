@@ -99,6 +99,21 @@ class BackgroundDisplay(
         return snapshot(read, markNew = false)
     }
 
+    /** The element's window left the background display: stop, never act on the person's screen. */
+    private fun movedOffBackground(): ActionResult {
+        BackgroundA11y.clear()
+        lastElements = emptyList()
+        lastScreenId = null
+        // l10n:keep agent screen protocol
+        return ActionResult(false, Reasons.of("displayTargetChanged"))
+    }
+
+    /** Whether the element is still on the display this task owns. */
+    private fun onBackground(elementId: Int): Boolean {
+        val id = displayId ?: return false
+        return runCatching { BackgroundA11y.onDisplay(id, elementId) }.getOrDefault(false)
+    }
+
     /** The accessibility read is the action here; the snapshot after it is the evidence. */
     private fun a11yResult(message: String): ActionResult {
         val snap = runCatching { observe(detail = false, image = false) }.getOrNull()
@@ -170,9 +185,19 @@ class BackgroundDisplay(
         when (action) {
             is PhoneAction.Tap -> {
                 // Where the engine has no tree, the service acts on the node it just read.
-                if (runCatching { BackgroundA11y.click(action.elementId, action.long) }.getOrDefault(false)) {
-                    // l10n:keep agent screen protocol
-                    return a11yResult("已在后台屏执行")
+                if (BackgroundA11y.holds(action.elementId)) {
+                    // The system moves the task to the default display as soon as a field wants the
+                    // IME; acting on the stale node would drive the app on the person's own screen.
+                    if (!onBackground(action.elementId)) return movedOffBackground()
+                    // A click on an editor is that focus request: refuse it instead of relocating.
+                    if (BackgroundA11y.isEditable(action.elementId)) {
+                        // l10n:keep agent screen protocol
+                        return ActionResult(false, "后台屏的输入框不能点（会弹到主屏），请直接用 type 写入这个元素")
+                    }
+                    if (runCatching { BackgroundA11y.click(action.elementId, action.long) }.getOrDefault(false)) {
+                        // l10n:keep agent screen protocol
+                        return a11yResult("已在后台屏执行")
+                    }
                 }
                 request.putString(Proto.OP, Proto.OP_TAP)
                 request.putInt(Proto.ELEMENT, action.elementId)
@@ -183,6 +208,9 @@ class BackgroundDisplay(
                 val target = lastElements.getOrNull(action.elementId - 1)
                 val secret = target != null && (target.isPassword || target.isSecretField) &&
                     !PhoneRegistry.unlocks().secretFields
+                if (!secret && BackgroundA11y.holds(action.elementId) && !onBackground(action.elementId)) {
+                    return movedOffBackground()
+                }
                 if (!secret && runCatching {
                         BackgroundA11y.setText(action.elementId, action.text, action.submit)
                     }.getOrDefault(false)) {

@@ -52,6 +52,28 @@ internal object BackgroundA11y {
         return bundle(pkg, out, state.complete, screen)
     }
 
+    /** Whether this element came from the accessibility read (the engine has no tree here). */
+    fun holds(elementId: Int): Boolean = nodes.getOrNull(elementId - 1) != null
+
+    /**
+     * Whether the element's window is still on the background display. The system can move the task
+     * to the default display (a text field asking for the IME does exactly that on 13); acting on the
+     * stale node then would drive the app on the person's own screen.
+     */
+    fun onDisplay(displayId: Int, elementId: Int): Boolean {
+        val node = nodes.getOrNull(elementId - 1) ?: return false
+        val service = PhoneA11yService.instance ?: return false
+        val windows = runCatching { service.windowsOnAllDisplays }.getOrNull() ?: return false
+        val ids = windows.get(displayId).orEmpty().map { it.id }.toSet()
+        return runCatching { node.windowId in ids }.getOrDefault(false)
+    }
+
+    /** Whether the element is an editor: clicking one here asks the system for a keyboard it cannot give. */
+    fun isEditable(elementId: Int): Boolean {
+        val node = nodes.getOrNull(elementId - 1) ?: return false
+        return runCatching { node.isEditable }.getOrDefault(false)
+    }
+
     /** Long-click and click on the element's node; the engine's injection stays for scrolling. */
     fun click(index: Int, long: Boolean): Boolean {
         val node = nodes.getOrNull(index - 1) ?: return false
@@ -68,11 +90,14 @@ internal object BackgroundA11y {
         return false
     }
 
-    /** Focus then set the whole value; a submit press follows only when asked. */
+    /**
+     * Write the whole value without asking for focus: on 13 a focus request is what moves the task to
+     * the default display, so the editor is filled in place instead. A submit press follows only when
+     * asked, also without focusing first.
+     */
     fun setText(index: Int, text: String, submit: Boolean): Boolean {
         val node = nodes.getOrNull(index - 1) ?: return false
         if (!runCatching { node.isEditable }.getOrDefault(false)) return false
-        runCatching { node.performAction(AccessibilityNodeInfo.ACTION_FOCUS) }
         val set = runCatching {
             node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply {
                 putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
