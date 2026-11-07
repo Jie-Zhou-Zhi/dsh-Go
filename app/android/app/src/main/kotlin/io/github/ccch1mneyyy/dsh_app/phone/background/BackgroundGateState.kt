@@ -8,6 +8,8 @@ internal class BackgroundGateState {
         val injectError: String? = null,
         val gateDetail: String? = null,
         val connectionError: Int? = null,
+        /** The probe could not judge input here; [injectOk] stays null and nothing is refused. */
+        val injectUnverified: Boolean = false,
     )
 
     class Probe internal constructor(internal val mayApply: () -> Boolean)
@@ -51,10 +53,19 @@ internal class BackgroundGateState {
     }
 
     /** False means the probe did not run, so none of the cached facts may be replaced. */
-    @Synchronized fun update(owner: Probe, ok: Boolean, error: String?, injectOk: Boolean?, injectError: String?, detail: String?): Boolean {
+    @Synchronized fun update(
+        owner: Probe,
+        ok: Boolean,
+        error: String?,
+        injectOk: Boolean?,
+        injectError: String?,
+        detail: String?,
+        injectUnverified: Boolean = false,
+    ): Boolean {
         if (!current(owner) || error == "probeBusy") return false
         failedChannel = null
-        snapshot = Snapshot(ok, injectOk, if (injectOk == false) injectError else null, detail)
+        snapshot = Snapshot(ok, injectOk, if (injectOk == false) injectError else null, detail,
+            injectUnverified = injectUnverified && injectOk == null)
         return true
     }
 }

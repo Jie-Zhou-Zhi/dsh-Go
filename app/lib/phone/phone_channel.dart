@@ -125,9 +125,52 @@ class PhonePrivilegedKeepStatus {
   final String? reasonCode;
 }
 
+/// What each part of 不打扰模式 can do on this Android version (BackgroundPolicy.Profile).
+///
+/// `none` / `experimental` / `full` per part: the page and the model both say which one is
+/// missing instead of one blanket "needs Android 14".
+class PhoneBackgroundCapabilities {
+  const PhoneBackgroundCapabilities({
+    this.display = 'none',
+    this.launch = 'none',
+    this.inject = 'none',
+    this.tree = 'none',
+    this.supported = false,
+    this.experimental = false,
+  });
+
+  factory PhoneBackgroundCapabilities.parse(Object? value) {
+    final m = _map(value);
+    if (m.isEmpty) return const PhoneBackgroundCapabilities();
+    return PhoneBackgroundCapabilities(
+      display: _text(m['display']) ?? 'none',
+      launch: _text(m['launch']) ?? 'none',
+      inject: _text(m['inject']) ?? 'none',
+      tree: _text(m['tree']) ?? 'none',
+      supported: _flag(m['supported']),
+      experimental: _flag(m['experimental']),
+    );
+  }
+
+  final String display;
+  final String launch;
+  final String inject;
+  final String tree;
+
+  /// Every part is fully supported here.
+  final bool supported;
+
+  /// The person already turned on the Android 13 attempt.
+  final bool experimental;
+
+  /// Worth attempting here, but not the full set: the experiment is offered, never assumed.
+  bool get experimentalRange => !supported && display == 'experimental';
+}
+
 class PhonePrivilegedStatus {
   const PhonePrivilegedStatus({
     this.mode = PhonePrivilegedMode.off,
+    this.capabilities = const PhoneBackgroundCapabilities(),
     this.ready = false,
     this.reason,
     this.supportedModes = const [],
@@ -145,6 +188,7 @@ class PhonePrivilegedStatus {
     final recommended = PhonePrivilegedMode.tryParse(m['recommendedMode']);
     const grantPaths = {'granted', 'shizuku', 'shizukuPermission', 'sui', 'suiPermission', 'root', 'adb', 'setup'};
     return PhonePrivilegedStatus(
+      capabilities: PhoneBackgroundCapabilities.parse(m['capabilities']),
       mode: parsed ?? PhonePrivilegedMode.off,
       ready: supported.contains(parsed) && _flag(m['ready']),
       reason: _text(m['reason']),
@@ -164,6 +208,9 @@ class PhonePrivilegedStatus {
   final String grantPath;
   final bool rootSelected;
   final PhonePrivilegedKeepStatus keep;
+
+  /// Which parts of the mode this Android version can do; never a support claim on its own.
+  final PhoneBackgroundCapabilities capabilities;
 }
 
 class PhoneA11yStatus {
@@ -226,6 +273,7 @@ class PhoneBackgroundStatus {
     this.ready = false,
     this.reason,
     this.androidOk = false,
+    this.injectUnverified = false,
     this.shizuku = const ShizukuStatus(),
     this.adb = const AdbStatus(),
     this.root = const PhoneRootStatus(),
@@ -237,6 +285,7 @@ class PhoneBackgroundStatus {
     ready: _flag(m['ready']),
     reason: _text(m['reason']),
     androidOk: _flag(m['androidOk']),
+    injectUnverified: _flag(m['injectUnverified']),
     shizuku: ShizukuStatus.fromMap(_map(m['shizuku'])),
     adb: AdbStatus.fromMap(_map(m['adb'])),
     root: PhoneRootStatus.fromMap(_map(m['root'])),
@@ -253,6 +302,9 @@ class PhoneBackgroundStatus {
 
   /// Android 14 or later (the practical floor).
   final bool androidOk;
+
+  /// The gate ran but could not judge input on this version; nothing was refused because of it.
+  final bool injectUnverified;
   final ShizukuStatus shizuku;
   final AdbStatus adb;
   final PhoneRootStatus root;
@@ -958,7 +1010,10 @@ class PhoneChannel {
   Future<PhoneResult> setBackgroundMode(PhoneBackgroundMode mode) => _result('setBackgroundMode', {'mode': mode.name});
 
   /// The caller gates these actions on the advertised versioned capabilities.
-  Future<PhoneResult> setPrivilegedMode(PhonePrivilegedMode mode) => _result('setBackgroundMode', {'mode': mode.name});
+  Future<PhoneResult> setPrivilegedMode(PhonePrivilegedMode mode, {bool? experimental}) => _result(
+    'setBackgroundMode',
+    {'mode': mode.name, if (experimental != null) 'experimental': experimental},
+  );
 
   /// An explicit keep choice. Success means saved; status reports actual recovery.
   Future<PhoneResult> setBackgroundKeep(PhonePrivilegedMode mode, bool enabled) =>

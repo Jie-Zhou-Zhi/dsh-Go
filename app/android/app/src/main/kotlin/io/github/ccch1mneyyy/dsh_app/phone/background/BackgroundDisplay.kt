@@ -21,18 +21,22 @@ import io.github.ccch1mneyyy.dsh_app.phone.TargetInfo
 class BackgroundDisplay(
     private val channelProvider: () -> PrivilegedChannel?,
     private val releaseChannelProvider: () -> PrivilegedChannel?,
+    /** Whether this device may run the mode at all (the supported floor, or an explicit 13 opt-in). */
+    private val androidOk: () -> Boolean = { BackgroundPolicy.supported(Build.VERSION.SDK_INT) },
 ) : PhoneDriver {
 
     override val screen: PhoneScreen = PhoneScreen.BACKGROUND
 
     @Volatile private var currentPackage: String? = null
+    /** The engine's display id for this task, once a launch told us; -1 until then. */
+    @Volatile private var displayId: Int? = null
     private var counter = 0
     private var lastScreenId: String? = null
     private var lastElements: List<Element> = emptyList()
     private var previousLabels: Set<String> = emptySet()
 
     override fun availability(): Availability {
-        if (Build.VERSION.SDK_INT < BackgroundPolicy.MIN_SDK)
+        if (!androidOk())
             // l10n:keep agent screen protocol
             return Availability(false, "不打扰模式需要 Android 14 或更高版本")
         val channel = channelProvider()
@@ -56,6 +60,7 @@ class BackgroundDisplay(
         }
         currentPackage = packageName
         val response = channel().execute(request)
+        displayId = response.getInt(Proto.DISPLAY_ID, -1).takeIf { it > 0 } ?: displayId
         // l10n:keep agent screen protocol
         return toResult(response, "已在后台屏打开")
     }
@@ -70,9 +75,60 @@ class BackgroundDisplay(
             putBoolean(Proto.WANT_IMAGE, image)
         }
         val response = channel().execute(request)
-        requireObservation(response.getBoolean(Proto.OK), response.getString(Proto.ERROR), response.getString(Proto.ERROR_DETAIL))
+        val code = response.getString(Proto.ERROR)
+        // Below Android 14 the engine cannot read the tree at all; the app's own accessibility
+        // service can, and it is the only reader available there.
+        if (!response.getBoolean(Proto.OK) && code != null && code in TREE_FAILURES) {
+            a11ySnapshot()?.let { return it }
+        }
+        requireObservation(
+            response.getBoolean(Proto.OK), code,
+            // A failed tree read is where "can this Android version read at all" must be answered.
+            if (code != null && code in TREE_FAILURES) {
+                listOfNotNull(
+                    response.getString(Proto.ERROR_DETAIL),
+                    "ime=${response.getInt(Proto.IME_POLICY, -1)}",
+                    probe(),
+                ).joinToString("; ").ifEmpty { null }
+            } else response.getString(Proto.ERROR_DETAIL),
+        )
         return snapshot(response, markNew = false)
     }
+
+    /** One read through the app's accessibility service, or null when it has nothing to show. */
+    private fun a11ySnapshot(): ScreenSnapshot? {
+        val pkg = currentPackage ?: return null
+        val id = displayId ?: BackgroundA11y.displayId().takeIf { it > 0 } ?: return null
+        val read = runCatching { BackgroundA11y.read(id, pkg) }.getOrNull() ?: return null
+        return snapshot(read, markNew = false)
+    }
+
+    /** The element's window left the background display: stop, never act on the person's screen. */
+    private fun movedOffBackground(): ActionResult {
+        BackgroundA11y.clear()
+        lastElements = emptyList()
+        lastScreenId = null
+        // l10n:keep agent screen protocol
+        return ActionResult(false, Reasons.of("displayTargetChanged"))
+    }
+
+    /** Whether the element is still on the display this task owns. */
+    private fun onBackground(elementId: Int): Boolean {
+        val id = displayId ?: return false
+        return runCatching { BackgroundA11y.onDisplay(id, elementId) }.getOrDefault(false)
+    }
+
+    /** The accessibility read is the action here; the snapshot after it is the evidence. */
+    private fun a11yResult(message: String): ActionResult {
+        val snap = runCatching { observe(detail = false, image = false) }.getOrNull()
+        return ActionResult(true, message, snap)
+    }
+
+    /** What the app's own accessibility service can see of the background display, or null. */
+    private fun probe(): String? = runCatching { A11yDisplayProbe.describe(displayId, currentPackage) }.getOrNull()
+
+    /** Failures that mean "the element tree could not be read", whatever the underlying cause. */
+    private val TREE_FAILURES = setOf("treeUnavailable", "treeNeedsAndroid14", "textConnectionUnavailable")
 
     /** A failed read is not an empty snapshot; old element numbers are no longer actionable. */
     internal fun requireObservation(ok: Boolean, code: String?, detail: String?) {
@@ -132,12 +188,39 @@ class BackgroundDisplay(
         }
         when (action) {
             is PhoneAction.Tap -> {
+                // Where the engine has no tree, the service acts on the node it just read.
+                if (BackgroundA11y.holds(action.elementId)) {
+                    // The system moves the task to the default display as soon as a field wants the
+                    // IME; acting on the stale node would drive the app on the person's own screen.
+                    if (!onBackground(action.elementId)) return movedOffBackground()
+                    // A click on an editor is that focus request: refuse it instead of relocating.
+                    if (BackgroundA11y.isEditable(action.elementId)) {
+                        // l10n:keep agent screen protocol
+                        return ActionResult(false, "后台屏的输入框不能点（会弹到主屏），请直接用 type 写入这个元素")
+                    }
+                    if (runCatching { BackgroundA11y.click(action.elementId, action.long) }.getOrDefault(false)) {
+                        // l10n:keep agent screen protocol
+                        return a11yResult("已在后台屏执行")
+                    }
+                }
                 request.putString(Proto.OP, Proto.OP_TAP)
                 request.putInt(Proto.ELEMENT, action.elementId)
                 request.putBoolean(Proto.LONG, action.long)
                 fingerprint(action.elementId, request)
             }
             is PhoneAction.Type -> {
+                val target = lastElements.getOrNull(action.elementId - 1)
+                val secret = target != null && (target.isPassword || target.isSecretField) &&
+                    !PhoneRegistry.unlocks().secretFields
+                if (!secret && BackgroundA11y.holds(action.elementId) && !onBackground(action.elementId)) {
+                    return movedOffBackground()
+                }
+                if (!secret && runCatching {
+                        BackgroundA11y.setText(action.elementId, action.text, action.submit)
+                    }.getOrDefault(false)) {
+                    // l10n:keep agent screen protocol
+                    return a11yResult("已在后台屏执行")
+                }
                 request.putString(Proto.OP, Proto.OP_TEXT)
                 request.putInt(Proto.ELEMENT, action.elementId)
                 fingerprint(action.elementId, request)
@@ -170,6 +253,7 @@ class BackgroundDisplay(
                 putString(Proto.OP, Proto.OP_RELEASE); putString(Proto.OWNER, "task")
             })
         }
+        BackgroundA11y.clear()
         currentPackage = null
         lastScreenId = null
         lastElements = emptyList()

@@ -1,0 +1,191 @@
+name: build-apk
+
+# 手动触发：Actions → build-apk → Run workflow。
+# 在 x86_64 runner 上装工具链、生成 runtime/out、出 arm64 APK，产物在 Artifacts。
+on:
+  workflow_dispatch:
+    inputs:
+      app_id:
+        description: "安装包名（留空＝官方名 io.github.ccch1mneyyy.dsh_app）"
+        required: false
+        default: "io.github.ccch1mneyyy.dshgo.local"
+      flavor:
+        description: "架构"
+        type: choice
+        options: [arm64, x64]
+        default: arm64
+      signing:
+        description: "签名方式：release＝正式密钥，test＝固定测试密钥（可覆盖升级），debug＝runner 临时密钥（每次都要卸载重装）"
+        type: choice
+        options: [release, test, debug]
+        default: release
+
+  # 本机 POST 常被 TLS 拦截，推这个分支即构建；未给 inputs 时用下面的兜底值。
+  push:
+    branches: [work/local-build, work/1.0.12]
+
+concurrency:
+  group: build-apk-${{ github.ref }}-${{ inputs.flavor || 'arm64' }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 本地补丁：把 .patch 放到仓库根目录即可，不需要先提交改动。
+      - name: 应用本地补丁（可选）
+        run: |
+          shopt -s nullglob
+          for p in *.patch patches/local-*.patch; do
+            echo "applying $p"
+            git apply --verbose "$p"
+          done
+
+      # runtime/out 与 Gradle 都需要空间；runner 自带的一堆 SDK 用不上。
+      - name: 腾出磁盘
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android/sdk/ndk/* || true
+          df -h /
+
+      - name: 宿主依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gpgv xz-utils unzip
+
+      # 固定签名密钥：装在手机上的包只有签名一致才能覆盖升级。没配 secret 时退回 debug 签名
+      # （每次 runner 生成不同密钥，换个包就得先卸载）。
+      #   仓库 Settings → Secrets and variables → Actions 里加四个：
+      #   ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD
+      - name: 恢复签名密钥
+        if: ${{ inputs.signing != 'debug' }}
+        env:
+          KS_B64: ${{ inputs.signing == 'test' && secrets.TEST_ANDROID_KEYSTORE_BASE64 || secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ inputs.signing == 'test' && secrets.TEST_ANDROID_KEYSTORE_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ inputs.signing == 'test' && secrets.TEST_ANDROID_KEY_ALIAS || secrets.ANDROID_KEY_ALIAS }}
+          KS_KEYPASS: ${{ inputs.signing == 'test' && secrets.TEST_ANDROID_KEY_PASSWORD || secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          # secrets 不能用在 if: 里，只能这样判空。
+          if [ -z "$KS_B64" ]; then
+            echo "没有 ANDROID_KEYSTORE_BASE64，本次退回 debug 签名（换包需卸载）"
+            exit 0
+          fi
+          printf '%s' "$KS_B64" | base64 -d > "$RUNNER_TEMP/dsh-signing.keystore"
+          {
+            echo "storeFile=$RUNNER_TEMP/dsh-signing.keystore"
+            echo "storePassword=$KS_PASS"
+            echo "keyAlias=$KS_ALIAS"
+            echo "keyPassword=$KS_KEYPASS"
+          } > app/android/key.properties
+          echo "签名密钥已就位："
+          keytool -list -keystore "$RUNNER_TEMP/dsh-signing.keystore" -storepass "$KS_PASS" | tail -3
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      # 版本必须与 tooling/setup-toolchain.sh 里钉的 FLUTTER_VERSION 一致。
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.7"
+          channel: stable
+          cache: true
+
+      # 不用 android-actions/setup-android：它默认会装早被下架的 `tools` 包，
+      # 报 "Failed to find package 'tools'" 直接失败。runner 已带 SDK，直接用它。
+      - name: Android SDK 就绪
+        run: |
+          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          SM="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SM" ] || SM="$(find "$SDK/cmdline-tools" -name sdkmanager -type f | head -1)"
+          echo "sdkmanager: $SM"
+          yes | "$SM" --licenses > /dev/null || true
+          flutter config --no-analytics --android-sdk "$SDK"
+          # platform / build-tools / ndk 交给 AGP 按 Flutter 的 compileSdk 自动装（许可已接受）。
+          "$SM" --install "platform-tools" | tail -2 || true
+          flutter doctor -v | head -30 || true
+
+      # 下载缓存（Ubuntu base、Node、DSH npm 树）：命中时省几分钟，不命中也能跑。
+      - name: 缓存运行时下载
+        uses: actions/cache@v4
+        with:
+          path: runtime/.cache
+          key: runtime-cache-${{ hashFiles('runtime/build-runtime.sh', 'runtime/patches/pins.json') }}
+
+      # Termux 会把旧构建从索引里删掉（proot 5.1.107.98 已经没了）。构建脚本本来就要读这份
+      # 索引并核对 deb 的 sha256，所以这里直接从索引取当前版本，钉死的默认值只作兜底。
+      - name: 解析 Termux 包版本
+        run: |
+          case "${{ inputs.flavor || 'arm64' }}" in
+            arm64) arch=aarch64 ;;
+            x64) arch=x86_64 ;;
+            *) echo "unknown flavor"; exit 1 ;;
+          esac
+          idx="$(mktemp)"
+          curl -fsSL --retry 3 --max-time 120 \
+            "https://packages.termux.dev/apt/termux-main/dists/stable/main/binary-$arch/Packages" -o "$idx"
+          for pkg in proot libtalloc libandroid-shmem; do
+            ver="$(awk -v RS= -v p="$pkg" '$0 ~ "(^|\n)Package: " p "\n" {print}' "$idx" | sed -n 's/^Version: //p' | sort -V | tail -1)"
+            if [ -z "$ver" ]; then echo "no version for $pkg in the index"; exit 1; fi
+            case "$pkg" in
+              proot) name=PROOT_VERSION ;;
+              libtalloc) name=TALLOC_VERSION ;;
+              libandroid-shmem) name=SHMEM_VERSION ;;
+            esac
+            echo "$name=$ver" >> "$GITHUB_ENV"
+            echo "$pkg = $ver"
+          done
+
+      # runtime/build-runtime.sh 默认从清华镜像和 npmmirror 拉 Ubuntu base / Node / npm 树。
+      # Azure runner 上如果慢到超时，把它里的 UBUNTU_MIRROR、NODE_MIRROR、NPM_REGISTRY、
+      # PBS_MIRROR 换成官方源（archive.ubuntu.com、nodejs.org、registry.npmjs.org）再跑。
+      - name: 生成 Linux 运行时（最慢的一步）
+        run: |
+          # build-runtime.sh 认的是 ABI 名（arm64-v8a / x86_64），不是 flavor 名。
+          case "${{ inputs.flavor || 'arm64' }}" in
+            arm64) abi=arm64-v8a ;;
+            x64) abi=x86_64 ;;
+            *) echo "unknown flavor: ${{ inputs.flavor || 'arm64' }}"; exit 1 ;;
+          esac
+          echo "runtime ABI: $abi"
+          runtime/build-runtime.sh "$abi"
+
+      - name: flutter pub get
+        working-directory: app
+        run: flutter pub get
+
+      - name: 构建 APK
+        env:
+          ORG_GRADLE_PROJECT_dshAppId: ${{ inputs.app_id || 'io.github.ccch1mneyyy.dshgo.local' }}
+        run: tooling/build-apk.sh -f ${{ inputs.flavor || 'arm64' }}
+
+      - name: 确认签名证书
+        if: always()
+        run: |
+          apk=$(find app/build/app/outputs/flutter-apk -name '*.apk' | head -1)
+          [ -n "$apk" ] || exit 0
+          AS="$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools" -name apksigner -type f | sort | tail -1)"
+          "$AS" verify --print-certs "$apk" | grep -i "SHA-256" | head -2 || true
+
+      - name: 报告包名与产物
+        if: always()
+        run: |
+          ls -lh app/build/app/outputs/flutter-apk/ 2>/dev/null || true
+          ls -lh dist/ 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dsh-go-${{ inputs.flavor || 'arm64' }}-apk
+          path: |
+            app/build/app/outputs/flutter-apk/*.apk
+            dist/*.apk
+          if-no-files-found: error
+          retention-days: 14

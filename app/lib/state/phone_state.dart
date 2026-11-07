@@ -213,6 +213,10 @@ class PhoneController extends Notifier<PhoneState> {
   Future<PhoneResult> setBackgroundKeep(PhonePrivilegedMode mode, bool enabled) =>
       _ifSupported(mode, () => _channel.setBackgroundKeep(mode, enabled));
 
+  /// The Android 13 attempt, as an explicit opt-in: the mode stays off, only the consent changes.
+  Future<PhoneResult> setDndExperimental(bool enabled) =>
+      _thenRefresh(_channel.setPrivilegedMode(PhonePrivilegedMode.off, experimental: enabled));
+
   /// Only an explicit tap: refresh, build and status events never prepare root.
   Future<PhoneResult> prepareRoot() => _ifSupported(PhonePrivilegedMode.root, _channel.prepareRoot);
 

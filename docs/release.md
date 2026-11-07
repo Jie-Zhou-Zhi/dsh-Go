@@ -59,6 +59,16 @@ tooling/build-apk.sh -f all          # 双架构本地验证；正式发版不�
 tooling/build-apk.sh --dry-run -f all   # 只打印要执行的命令
 ```
 
+### 换个安装包名（本地验证用）
+
+想把包装到官方版旁边、不影响已装的那份和它的数据，可以换一个安装包名再构建：
+
+```sh
+ORG_GRADLE_PROJECT_dshAppId=com.example.dshgo tooling/build-apk.sh
+```
+
+也可以写在 `app/android/gradle.properties`（`dshAppId=…`）。只有安装包名变（以及静态快捷方式里的 targetPackage 跟着生成），Kotlin 命名空间和源码不变。注意这是个全新的安装：没有旧数据，本机引擎、无障碍服务和通知权限都要重新走一遍。
+
 脚本把构建时间编成 versionCode，传给 `--build-number`，同时传 `--build-name` 和 `DSH_APP_VERSION`：
 
 ```text

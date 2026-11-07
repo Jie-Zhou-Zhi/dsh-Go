@@ -47,7 +47,8 @@ class PrivilegedKeepJob : JobService() {
     companion object {
         private const val JOB_ID = 0x44534850
         private fun wanted(context: Context): String {
-            if (Build.VERSION.SDK_INT < BackgroundPolicy.MIN_SDK || !PhoneControl.switchedOn(context)) return "off"
+            // Full support only: an experimental attempt is never restored by the boot job.
+            if (!BackgroundPolicy.supported(Build.VERSION.SDK_INT) || !PhoneControl.switchedOn(context)) return "off"
             return context.getSharedPreferences("phone-privileged-keep", Context.MODE_PRIVATE)
                 .getString("keptMode", "off")?.takeIf { it in PrivilegedKeepState.MODES } ?: "off"
         }

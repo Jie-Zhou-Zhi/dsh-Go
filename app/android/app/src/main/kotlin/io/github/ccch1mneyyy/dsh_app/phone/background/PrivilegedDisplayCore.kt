@@ -72,6 +72,8 @@ class PrivilegedDisplayCore(private val context: Context) {
     @Volatile private var reader: ImageReader? = null
     private var width = 0
     private var height = 0
+    /** Read back after each write: a ROM may refuse the policy we asked for. */
+    @Volatile private var imePolicyActual = -1
     private val released = AtomicBoolean(false)
 
     private class Fault(val code: String) : Exception()
@@ -85,6 +87,8 @@ class PrivilegedDisplayCore(private val context: Context) {
                 response.putBoolean(Proto.OK, true)
                 response.putInt(Proto.UID, Process.myUid())
                 response.putString("revision", Proto.REVISION)
+                response.putInt(Proto.SDK, Build.VERSION.SDK_INT)
+                response.putBundle(Proto.CAPABILITIES, capabilities())
                 return response
             }
             if (op == Proto.OP_DESTROY) {
@@ -179,6 +183,22 @@ class PrivilegedDisplayCore(private val context: Context) {
         }
     }
 
+    /**
+     * What this engine can attempt here, by part. A name only: the app reports it and never treats
+     * an experimental part as supported. Same source as [BackgroundPolicy.profile].
+     */
+    private fun capabilities(): Bundle {
+        val profile = BackgroundPolicy.profile(Build.VERSION.SDK_INT)
+        return Bundle().apply {
+            putString("display", profile.display.name.lowercase())
+            putString("launch", profile.launch.name.lowercase())
+            putString("inject", profile.inject.name.lowercase())
+            putString("tree", profile.tree.name.lowercase())
+            putString("ime", profile.ime.name.lowercase())
+            putInt("imePolicy", BackgroundPolicy.imePolicy(Build.VERSION.SDK_INT))
+        }
+    }
+
     /** Test a real input receiver, not an empty display. Never launches or touches a user app. */
     private fun gateProbe(response: Bundle) {
         // A settings probe must not replace or release an active task's display.
@@ -200,9 +220,14 @@ class PrivilegedDisplayCore(private val context: Context) {
                     try { window.close() } finally { probeDetail = window.failureDetail }
                 }
             }
-            response.putBoolean(Proto.INJECT_OK, injection.isSuccess)
+            // 13: the receiver window often cannot attach to a display the system does not trust, so a
+            // failed probe there is "unverified", not "input denied": no verdict is claimed and the
+            // attempt is left to a real task.
+            val unverified = !injection.isSuccess && !BackgroundPolicy.probeCanJudge(Build.VERSION.SDK_INT)
+            if (unverified) response.putBoolean(Proto.INJECT_UNVERIFIED, true)
+            else response.putBoolean(Proto.INJECT_OK, injection.isSuccess)
             injection.exceptionOrNull()?.let {
-                response.putString(Proto.INJECT_ERROR, failureCode(it))
+                if (!unverified) response.putString(Proto.INJECT_ERROR, failureCode(it))
                 (probeDetail ?: failureDetail(it))?.let { detail -> response.putString(Proto.ERROR_DETAIL, detail) }
             }
         } finally {
@@ -223,12 +248,18 @@ class PrivilegedDisplayCore(private val context: Context) {
         val w = size[0]; val h = size[1]
         val ir = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
         try {
-            // Every flag must resolve; never silently make a focus-stealing display on an old ROM.
+            // Only flags this Android version has are asked for, and each one must still resolve:
+            // never silently make a focus-stealing display, and never fold a 14-only list below 14.
             // SECURE is deliberately not requested, so protected content stays protected.
             val flags = try {
-                FLAG_NAMES.fold(0) { bits, name ->
+                BackgroundPolicy.flagNames(Build.VERSION.SDK_INT).fold(0) { bits, name ->
                     bits or DisplayManager::class.java.getDeclaredField("VIRTUAL_DISPLAY_FLAG_$name").getInt(null)
                 }
+            } catch (e: NoSuchFieldException) {
+                // Name the one flag the ROM is missing: "trusted" reads better than "unsupported".
+                val missing = e.message.orEmpty()
+                    .substringAfterLast("VIRTUAL_DISPLAY_FLAG_").substringBefore(' ').lowercase()
+                throw Fault("displayUnsupported:" + missing.ifEmpty { "flag" })
             } catch (_: ReflectiveOperationException) { throw Fault("displayUnsupported") }
             // Presentation requires this flag for the gate's inert receiver. Actual tasks keep
             // their existing display flags; this tests delivery, not every target app's policy.
@@ -236,8 +267,11 @@ class PrivilegedDisplayCore(private val context: Context) {
                 flags or if (probe) DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION else 0)
             if (vd.display.displayId <= Display.DEFAULT_DISPLAY) { vd.release(); throw Fault("displayUnsupported") }
             width = w; height = h; reader = ir; display = vd
-            // Keep the virtual display's keyboard off the main screen: IME policy HIDE.
-            runCatching { setImePolicyHide(vd.display.displayId) }
+            // Below 14 the keyboard has to live on this display; on 14+ it stays off it.
+            runCatching {
+                setDisplayImePolicy(vd.display.displayId, BackgroundPolicy.imePolicy(Build.VERSION.SDK_INT))
+                imePolicyActual = readImePolicy(vd.display.displayId)
+            }
         } catch (e: Throwable) { ir.close(); if (e is Fault) throw e else throw Fault("displayUnsupported") }
     }
 
@@ -258,6 +292,11 @@ class PrivilegedDisplayCore(private val context: Context) {
         } catch (_: SecurityException) { throw Fault("launchDenied") }
         catch (_: PendingIntent.CanceledException) { throw Fault("launchCancelled") }
         finally { pending?.let { runCatching { it.cancel() } } }
+        // The app may have asked for its own policy while starting; say it again once it is up.
+        runCatching {
+            setDisplayImePolicy(display.display.displayId, BackgroundPolicy.imePolicy(Build.VERSION.SDK_INT))
+            imePolicyActual = readImePolicy(display.display.displayId)
+        }
         // Poll for the target becoming foreground on the owned display.
         val deadline = SystemClock.uptimeMillis() + 4000
         while (true) {
@@ -294,6 +333,7 @@ class PrivilegedDisplayCore(private val context: Context) {
         response.putInt(Proto.DISPLAY_ID, id)
         response.putString(Proto.FG_PKG, pkg)
         response.putBoolean(Proto.PORTRAIT, height >= width)
+        response.putInt(Proto.IME_POLICY, imePolicyActual)
         val captureResult = runCatching { capture() }
         val captureFailure = captureResult.exceptionOrNull()
         if (captureFailure is InterruptedException ||
@@ -453,7 +493,10 @@ class PrivilegedDisplayCore(private val context: Context) {
         val vd = display ?: throw Fault("displayMissing")
         val conn = TreeConnection(context, pkg)
         try {
-            val automation = try { conn.open(vd.display) } catch (_: Throwable) { throw Fault("treeUnavailable") }
+            // A Fault already carries the real reason (e.g. treeNeedsAndroid14); only unexpected
+            // throwables become the generic "could not read the tree".
+            val automation = try { conn.open(vd.display) } catch (e: Fault) { throw e }
+                catch (_: Throwable) { throw Fault("treeUnavailable") }
             return readTree(automation, displayId, pkg, scanOtherWindows = scanOtherWindows)
         } finally { conn.close() }
     }
@@ -666,7 +709,8 @@ class PrivilegedDisplayCore(private val context: Context) {
         val vd = display ?: throw Fault("displayMissing")
         val conn = TreeConnection(context, pkg)
         try {
-            val automation = try { conn.open(vd.display) } catch (_: Throwable) { throw Fault("textConnectionUnavailable") }
+            val automation = try { conn.open(vd.display) } catch (e: Fault) { throw e }
+                catch (_: Throwable) { throw Fault("textConnectionUnavailable") }
             val node = readTree(automation, vd.display.displayId, pkg, index).target ?: throw Fault("elementMissing")
             try {
                 if (!node.refresh()) throw Fault("textTargetChanged")
@@ -766,14 +810,23 @@ class PrivilegedDisplayCore(private val context: Context) {
         if (waitForFinish && !accepted) throw Fault("inputRejected")
     }
 
-    private fun setImePolicyHide(displayId: Int) {
+    /** The policy the display really has, when the ROM can tell us; -1 when it cannot. */
+    private fun readImePolicy(displayId: Int): Int = runCatching {
         val sm = Class.forName("android.os.ServiceManager")
         val binder = sm.getMethod("getService", String::class.java).invoke(null, "window") as IBinder
         val wm = Class.forName("android.view.IWindowManager\$Stub")
             .getMethod("asInterface", IBinder::class.java).invoke(null, binder)
-        // DISPLAY_IME_POLICY_HIDE == 2
+        wm.javaClass.getMethod("getDisplayImePolicy", Int::class.javaPrimitiveType).invoke(wm, displayId) as Int
+    }.getOrDefault(-1)
+
+    private fun setDisplayImePolicy(displayId: Int, policy: Int) {
+        val sm = Class.forName("android.os.ServiceManager")
+        val binder = sm.getMethod("getService", String::class.java).invoke(null, "window") as IBinder
+        val wm = Class.forName("android.view.IWindowManager\$Stub")
+            .getMethod("asInterface", IBinder::class.java).invoke(null, binder)
+        // @hide WindowManager.DISPLAY_IME_POLICY_*: 0 local, 1 fallback display, 2 hide.
         wm.javaClass.getMethod("setDisplayImePolicy", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
-            .invoke(wm, displayId, 2)
+            .invoke(wm, displayId, policy)
     }
 
     /**
@@ -830,7 +883,9 @@ class PrivilegedDisplayCore(private val context: Context) {
         private var automation: UiAutomation? = null
 
         fun open(display: Display): UiAutomation {
-            if (Build.VERSION.SDK_INT < 34) throw Fault("textConnectionUnavailable")
+            // A display-bound UiAutomation is 14+: below that the element tree has no read path yet,
+            // and the reason must say so rather than reuse the "service unavailable" text.
+            if (Build.VERSION.SDK_INT < BackgroundPolicy.FULL_SDK) throw Fault("treeNeedsAndroid14")
             val connectionType = Class.forName("android.app.IUiAutomationConnection")
             val connection = Proxy.newProxyInstance(connectionType.classLoader, arrayOf(connectionType)) { proxy, method, args ->
                 when (method.name) {
@@ -884,9 +939,6 @@ class PrivilegedDisplayCore(private val context: Context) {
 
     companion object {
         private val PACKAGE = Regex("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z0-9_]+)+")
-        private val FLAG_NAMES = listOf(
-            "PUBLIC", "OWN_CONTENT_ONLY", "SUPPORTS_TOUCH", "DESTROY_CONTENT_ON_REMOVAL",
-            "TRUSTED", "OWN_FOCUS", "STEAL_TOP_FOCUS_DISABLED")
         private val KEYS = mapOf(
             "back" to KeyEvent.KEYCODE_BACK, "home" to KeyEvent.KEYCODE_HOME,
             "enter" to KeyEvent.KEYCODE_ENTER, "delete" to KeyEvent.KEYCODE_DEL,

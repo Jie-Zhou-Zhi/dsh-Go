@@ -33,7 +33,7 @@ import java.util.concurrent.Executors
  *   (newest first, at most [MAX_RECENT]; an empty list clears them). Pinned copies of a
  *   conversation that is still recent are retitled with it.
  *
- * The two static shortcuts (新对话, 语音输入) are res/xml/shortcuts.xml, on every launcher alias.
+ * The two static shortcuts (新对话, 语音输入) are shortcuts/shortcuts.xml (copied into res by build.gradle.kts), on every launcher alias.
  * The recent ones belong to the alias that is the launcher entry now ([LauncherIconPlugin.entry]);
  * a new 桌面图标 moves them over ([rebind]) — the system drops shortcuts of a disabled entry.
  */
@@ -177,7 +177,7 @@ class ShortcutsPlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHa
         const val MAX_RECENT = 3
         const val RECENT_PREFIX = "chat:"
 
-        /** 新对话 and 语音输入 in res/xml/shortcuts.xml. */
+        /** 新对话 and 语音输入 in shortcuts/shortcuts.xml (copied into res by build.gradle.kts). */
         private const val STATIC_SHORTCUTS = 2
 
         /** Per process, never leaves it: proves an entry came through [EntryActivity]. */

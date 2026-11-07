@@ -2,6 +2,18 @@
 
 每个版本先中文、后英文。发版时把对应版本的正文（不含版本标题）作为 Release 正文，见 `docs/release.md`。
 
+## 未发布 · Unreleased
+
+### 中文
+
+- 确认请求现在有第二种授权方式：同一条请求除了屏幕上的确认卡，也会出现在通知栏，按钮相同；哪边先回答就按哪边算，另一边自动消失。卡片点不动或正在用全屏应用时，下拉通知栏即可授权。
+- 不打扰模式：按系统版本分开报告能力（建屏、启动应用、注入输入、读界面元素），错误信息会写明缺的是哪一项，不再笼统报「不支持」。Android 13 上新增一个默认关闭的尝试开关：允许后可以选通道，但独立焦点和读元素这两项系统没有，可能起不来 App、读不到界面文字；关掉开关会同时关闭当前通道。系统不允许在后台屏上挂测试窗口时，输入自检记为「未验证」而不是失败，任务直接尝试；读取元素失败时不再把原因一律改写成「未能读取控件树」，并会附上 App 侧无障碍服务能看到的后台屏窗口数量，便于判断这台机器能不能读元素。Android 13 上引擎读不到元素时，改用 App 自己的无障碍服务读那块屏并按元素点按、写入（滚动仍走引擎注入）。Android 13 上点输入框会把任务弹到主屏（系统没有独立焦点，输入法只能挂主屏），14 以下的虚拟屏改用「输入法显示在这块屏自己身上」的显示策略（此前一律藏起键盘，App 请求焦点时只能去主屏找输入法，任务因此被搬走），后台屏的输入框也不再接受点按、写入不再先请求焦点；任务一旦被系统挪到主屏，后台屏操作立即停止，不会在你自己的屏幕上继续点。是否真的可用仍待真机验证。
+
+### English
+
+- Confirmation requests now have a second way to be answered: the same request appears on the confirmation card and in the notification shade, with the same buttons. Whichever is answered first wins and the other disappears, so a card that cannot be tapped no longer blocks the task.
+- Non-disruptive mode now reports its capabilities per part (display, launch, inject, element tree) and names the missing one instead of saying "unsupported". Android 13 gets an attempt switch, off by default: with it on you can pick a channel, but the system has no own-focus display and no element tree, so apps may refuse to start and their text may be unreadable; turning it off also closes the current channel. When the system refuses to attach the probe window to the background screen, the input self-test is recorded as unverified rather than failed and the task tries directly. A failed element read no longer has its reason rewritten to "could not read the tree" and now carries how many background-display windows the app's own accessibility service can see, which is what decides whether this phone can read elements at all. On Android 13 the element read now falls back to the app's own accessibility service (which can see the background display's window), and taps and text go through it; scrolling still uses engine injection. On Android 13 tapping a text field moves the task to the main screen (the system has no per-display focus and the IME only lives there), below 14 the display now asks for the keyboard to be shown on itself (it used to hide it, which sent apps to the main screen to find an IME and dragged the task along), and background-screen fields no longer accept taps while writing no longer asks for focus first; if the system moves the task to the main screen, background-screen actions stop at once instead of tapping on your own screen. Whether it actually works is still to be verified on a device.
+
 ## 1.0.12 · 2026-11-07
 
 ### 中文

@@ -81,6 +81,7 @@ Map<String, Object?> privilegedStatus({
   bool androidOk = true,
   bool enabled = true,
   Map<String, Object?>? keep,
+  Map<String, Object?>? capabilities,
 }) {
   final base = phoneStatus(
     enabled: enabled,
@@ -119,6 +120,7 @@ Map<String, Object?> privilegedStatus({
         'grantPath': grantPath,
         'rootSelected': rootSelected ?? mode == 'root',
         'keep': ?keep,
+        'capabilities': ?capabilities,
       },
     },
   };

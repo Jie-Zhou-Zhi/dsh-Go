@@ -33,6 +33,18 @@ const _acting = {'setBackgroundMode', 'prepareRoot', 'requestShizukuPermission',
 
 Iterable<String> acting(FakePhoneNative native) => native.methods.where(_acting.contains);
 
+/// Android 13: the display is worth attempting, everything above it is missing.
+const android13Capabilities = <String, Object?>{
+  'sdk': 33,
+  'display': 'experimental',
+  'launch': 'experimental',
+  'inject': 'experimental',
+  'tree': 'experimental',
+  'ime': 'full',
+  'supported': false,
+  'experimental': false,
+};
+
 Future<void> open(WidgetTester tester, String title) async {
   await tester.tap(find.text(title));
   await tester.pumpAndSettle();
@@ -81,6 +93,29 @@ void main() {
     expect(inRow('Shizuku', '使用中'), findsOneWidget);
     // Working, so folded: the common case is one glance.
     expect(find.text('Shizuku 这边准备好了。'), findsNothing);
+  });
+
+  testWidgets('android 13 offers the attempt switch, and only the switch writes it', (tester) async {
+    final h = await pumpPhone(
+      tester,
+      const PhoneDndPage(),
+      native: FakePhoneNative(
+        status: privilegedStatus(androidOk: false, capabilities: android13Capabilities),
+      ),
+    );
+    // Not "this phone cannot use it": the experiment is offered, with what is missing spelled out.
+    expect(find.byType(PhoneNote), findsNothing);
+    expect(find.text('在 Android 13 上尝试（实验）'), findsOneWidget);
+    expect(find.textContaining('独立焦点和读元素'), findsOneWidget);
+    // Reading the page, opening rows and refreshing pick nothing.
+    expect(acting(h.native!), isEmpty);
+
+    await tester.tap(find.byType(Switch));
+    await tester.pumpAndSettle();
+    expect(h.native!.callsOf('setBackgroundMode').single.arguments, {
+      'mode': 'off',
+      'experimental': true,
+    });
   });
 
   testWidgets('root not tried yet is 尚未检查, and opening or refreshing never runs su', (tester) async {

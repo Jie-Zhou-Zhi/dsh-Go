@@ -149,7 +149,10 @@ class PhonePlugin : FlutterPlugin, ActivityAware, MethodChannel.MethodCallHandle
                     controlIo.execute { control.background.saveKeep(cleared) }
                 }
                 if (mode != "root") control.background.cancelRootSelection()
-                async(result) { if (live()) control.background.setBackgroundMode(mode, live) else cancelledSelection() }
+                val experimental = call.argument<Boolean>("experimental")
+                async(result) {
+                    if (live()) control.background.setBackgroundMode(mode, live, experimental) else cancelledSelection()
+                }
             }
             "requestShizukuPermission" -> {
                 val live = stillWanted(privilegedActions.snapshot())

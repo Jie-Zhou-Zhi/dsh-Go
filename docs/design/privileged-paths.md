@@ -6,6 +6,8 @@
 
 不打扰模式需要有权限创建可信、独立焦点虚拟屏并注入输入的进程。自动恢复无障碍需要 App 持有 `WRITE_SECURE_SETTINGS`，可通过同类特权通道进行一次性授予。两项用途共享底层能力，但前者有 Android 14 的虚拟屏门槛，后者不要求先启用虚拟屏。
 
+门槛现在按能力分开报：`BackgroundPolicy.profile(sdk)` 把建屏、启动应用、注入输入、读界面元素、IME 策略五项各自标成 `none / experimental / full`，`flagNames(sdk)` 只请求该版本真实存在的虚拟屏标志（`TRUSTED`、`OWN_FOCUS`、`STEAL_TOP_FOCUS_DISABLED` 仅 14+）。Android 13 落在 `experimental`：需要本人显式打开尝试开关才会进入通道选择，`supported` 仍为 false，开机恢复与保持通道一律按完整支持判断，不给实验档位自动恢复。绑 display 的 `UiAutomation` 读树在 14 以下没有路径，报 `treeNeedsAndroid14`，不伪装成「服务不可用」。
+
 | 通道 | 适用用户 | 需要什么 | 本次边界 |
 | --- | --- | --- | --- |
 | off | 暂不使用不打扰模式 | 无特权启动 | 关闭后台通道；不自动改选推荐项 |
