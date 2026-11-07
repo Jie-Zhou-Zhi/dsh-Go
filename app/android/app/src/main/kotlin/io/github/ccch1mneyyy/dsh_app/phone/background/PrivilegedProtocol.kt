@@ -79,6 +79,8 @@ object Proto {
     const val FRAME_NOT_READY = "frameNotReady"
     const val POOR = "poorTree"
     const val PORTRAIT = "portrait"
+    /** The display IME policy the ROM actually reports after we set it; -1 when it cannot say. */
+    const val IME_POLICY = "imePolicy"
     const val KEYBOARD_UP = "keyboardUp"
     const val IMAGE_OMITTED = "imageOmitted"
     const val APP_LABEL = "appLabel"

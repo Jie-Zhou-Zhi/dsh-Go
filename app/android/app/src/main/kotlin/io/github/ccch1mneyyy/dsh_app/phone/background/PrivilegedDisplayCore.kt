@@ -72,6 +72,8 @@ class PrivilegedDisplayCore(private val context: Context) {
     @Volatile private var reader: ImageReader? = null
     private var width = 0
     private var height = 0
+    /** Read back after each write: a ROM may refuse the policy we asked for. */
+    @Volatile private var imePolicyActual = -1
     private val released = AtomicBoolean(false)
 
     private class Fault(val code: String) : Exception()
@@ -193,6 +195,7 @@ class PrivilegedDisplayCore(private val context: Context) {
             putString("inject", profile.inject.name.lowercase())
             putString("tree", profile.tree.name.lowercase())
             putString("ime", profile.ime.name.lowercase())
+            putInt("imePolicy", BackgroundPolicy.imePolicy(Build.VERSION.SDK_INT))
         }
     }
 
@@ -265,7 +268,10 @@ class PrivilegedDisplayCore(private val context: Context) {
             if (vd.display.displayId <= Display.DEFAULT_DISPLAY) { vd.release(); throw Fault("displayUnsupported") }
             width = w; height = h; reader = ir; display = vd
             // Below 14 the keyboard has to live on this display; on 14+ it stays off it.
-            runCatching { setDisplayImePolicy(vd.display.displayId, BackgroundPolicy.imePolicy(Build.VERSION.SDK_INT)) }
+            runCatching {
+                setDisplayImePolicy(vd.display.displayId, BackgroundPolicy.imePolicy(Build.VERSION.SDK_INT))
+                imePolicyActual = readImePolicy(vd.display.displayId)
+            }
         } catch (e: Throwable) { ir.close(); if (e is Fault) throw e else throw Fault("displayUnsupported") }
     }
 
@@ -287,7 +293,10 @@ class PrivilegedDisplayCore(private val context: Context) {
         catch (_: PendingIntent.CanceledException) { throw Fault("launchCancelled") }
         finally { pending?.let { runCatching { it.cancel() } } }
         // The app may have asked for its own policy while starting; say it again once it is up.
-        runCatching { setDisplayImePolicy(display.displayId, BackgroundPolicy.imePolicy(Build.VERSION.SDK_INT)) }
+        runCatching {
+            setDisplayImePolicy(display.display.displayId, BackgroundPolicy.imePolicy(Build.VERSION.SDK_INT))
+            imePolicyActual = readImePolicy(display.display.displayId)
+        }
         // Poll for the target becoming foreground on the owned display.
         val deadline = SystemClock.uptimeMillis() + 4000
         while (true) {
@@ -324,6 +333,7 @@ class PrivilegedDisplayCore(private val context: Context) {
         response.putInt(Proto.DISPLAY_ID, id)
         response.putString(Proto.FG_PKG, pkg)
         response.putBoolean(Proto.PORTRAIT, height >= width)
+        response.putInt(Proto.IME_POLICY, imePolicyActual)
         val captureResult = runCatching { capture() }
         val captureFailure = captureResult.exceptionOrNull()
         if (captureFailure is InterruptedException ||
@@ -783,6 +793,15 @@ class PrivilegedDisplayCore(private val context: Context) {
         // Only the gate uses ASYNC: its window receipt, not this boolean, decides delivery.
         if (waitForFinish && !accepted) throw Fault("inputRejected")
     }
+
+    /** The policy the display really has, when the ROM can tell us; -1 when it cannot. */
+    private fun readImePolicy(displayId: Int): Int = runCatching {
+        val sm = Class.forName("android.os.ServiceManager")
+        val binder = sm.getMethod("getService", String::class.java).invoke(null, "window") as IBinder
+        val wm = Class.forName("android.view.IWindowManager\$Stub")
+            .getMethod("asInterface", IBinder::class.java).invoke(null, binder)
+        wm.javaClass.getMethod("getDisplayImePolicy", Int::class.javaPrimitiveType).invoke(wm, displayId) as Int
+    }.getOrDefault(-1)
 
     private fun setDisplayImePolicy(displayId: Int, policy: Int) {
         val sm = Class.forName("android.os.ServiceManager")

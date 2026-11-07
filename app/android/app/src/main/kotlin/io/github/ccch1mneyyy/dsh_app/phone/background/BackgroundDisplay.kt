@@ -85,7 +85,11 @@ class BackgroundDisplay(
             response.getBoolean(Proto.OK), code,
             // A failed tree read is where "can this Android version read at all" must be answered.
             if (code != null && code in TREE_FAILURES) {
-                listOfNotNull(response.getString(Proto.ERROR_DETAIL), probe()).joinToString("; ").ifEmpty { null }
+                listOfNotNull(
+                    response.getString(Proto.ERROR_DETAIL),
+                    "ime=${response.getInt(Proto.IME_POLICY, -1)}",
+                    probe(),
+                ).joinToString("; ").ifEmpty { null }
             } else response.getString(Proto.ERROR_DETAIL),
         )
         return snapshot(response, markNew = false)
