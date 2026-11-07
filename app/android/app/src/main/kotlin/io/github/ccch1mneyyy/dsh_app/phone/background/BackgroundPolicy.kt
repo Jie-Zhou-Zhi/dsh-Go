@@ -46,6 +46,12 @@ object BackgroundPolicy {
 
     fun supported(sdk: Int): Boolean = profile(sdk).supported
 
+    /**
+     * Whether the gate's receiver can give a real verdict here. Below 14 a window is often refused on
+     * a display the system does not trust, so a failed probe is unverified rather than a denial.
+     */
+    fun probeCanJudge(sdk: Int): Boolean = profile(sdk).inject == Support.FULL
+
     /** Whether a probe may run here at all: the gate is what turns an experiment into facts. */
     fun canProbe(sdk: Int): Boolean = sdk >= EXPERIMENTAL_SDK
 

@@ -156,4 +156,26 @@ class BackgroundGateStateTest {
             state.snapshot,
         )
     }
+
+    @Test fun aProbeThatCannotJudgeInputIsNotAVerdict() {
+        val gate = BackgroundGateState()
+        val owner = gate.begin { true }!!
+        // 13: the receiver window never attached, so the engine sends no injectOk at all.
+        gate.update(owner, ok = true, error = null, injectOk = null, injectError = null,
+            detail = "probe-v1;stage=presentation_create;type=SecurityException;elapsedMs=85",
+            injectUnverified = true)
+        val snapshot = gate.snapshot
+        assertNull(snapshot.injectOk)
+        assertTrue(snapshot.injectUnverified)
+        assertEquals(true, snapshot.trustedDisplayOk)
+    }
+
+    @Test fun aVerdictIsNeverBothUnverifiedAndFailed() {
+        val gate = BackgroundGateState()
+        val owner = gate.begin { true }!!
+        gate.update(owner, ok = true, error = null, injectOk = false, injectError = "inputRejected",
+            detail = null, injectUnverified = true)
+        assertFalse(gate.snapshot.injectUnverified)
+        assertEquals("inputRejected", gate.snapshot.injectError)
+    }
 }

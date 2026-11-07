@@ -58,4 +58,11 @@ class BackgroundPolicyTest {
         assertEquals(base + trusted, BackgroundPolicy.flagNames(34))
         assertEquals(base + trusted, BackgroundPolicy.flagNames(35))
     }
+
+    @Test fun theGateCanOnlyJudgeInputWhereTheModeIsFullySupported() {
+        assertTrue(BackgroundPolicy.probeCanJudge(34))
+        // 13: a window usually cannot attach, so a failed probe there proves nothing about input.
+        assertFalse(BackgroundPolicy.probeCanJudge(33))
+        assertFalse(BackgroundPolicy.probeCanJudge(32))
+    }
 }

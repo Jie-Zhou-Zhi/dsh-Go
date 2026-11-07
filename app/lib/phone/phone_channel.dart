@@ -273,6 +273,7 @@ class PhoneBackgroundStatus {
     this.ready = false,
     this.reason,
     this.androidOk = false,
+    this.injectUnverified = false,
     this.shizuku = const ShizukuStatus(),
     this.adb = const AdbStatus(),
     this.root = const PhoneRootStatus(),
@@ -284,6 +285,7 @@ class PhoneBackgroundStatus {
     ready: _flag(m['ready']),
     reason: _text(m['reason']),
     androidOk: _flag(m['androidOk']),
+    injectUnverified: _flag(m['injectUnverified']),
     shizuku: ShizukuStatus.fromMap(_map(m['shizuku'])),
     adb: AdbStatus.fromMap(_map(m['adb'])),
     root: PhoneRootStatus.fromMap(_map(m['root'])),
@@ -300,6 +302,9 @@ class PhoneBackgroundStatus {
 
   /// Android 14 or later (the practical floor).
   final bool androidOk;
+
+  /// The gate ran but could not judge input on this version; nothing was refused because of it.
+  final bool injectUnverified;
   final ShizukuStatus shizuku;
   final AdbStatus adb;
   final PhoneRootStatus root;

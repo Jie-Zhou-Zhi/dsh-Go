@@ -217,9 +217,14 @@ class PrivilegedDisplayCore(private val context: Context) {
                     try { window.close() } finally { probeDetail = window.failureDetail }
                 }
             }
-            response.putBoolean(Proto.INJECT_OK, injection.isSuccess)
+            // 13: the receiver window often cannot attach to a display the system does not trust, so a
+            // failed probe there is "unverified", not "input denied": no verdict is claimed and the
+            // attempt is left to a real task.
+            val unverified = !injection.isSuccess && !BackgroundPolicy.probeCanJudge(Build.VERSION.SDK_INT)
+            if (unverified) response.putBoolean(Proto.INJECT_UNVERIFIED, true)
+            else response.putBoolean(Proto.INJECT_OK, injection.isSuccess)
             injection.exceptionOrNull()?.let {
-                response.putString(Proto.INJECT_ERROR, failureCode(it))
+                if (!unverified) response.putString(Proto.INJECT_ERROR, failureCode(it))
                 (probeDetail ?: failureDetail(it))?.let { detail -> response.putString(Proto.ERROR_DETAIL, detail) }
             }
         } finally {

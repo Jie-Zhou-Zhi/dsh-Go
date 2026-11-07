@@ -189,6 +189,8 @@ class _PhoneDndPageState extends ConsumerState<PhoneDndPage> {
       subtitle: Text(l10n.phoneDndSubtitle),
       children: [
         if (!bg.androidOk && !experiment) PhoneNote(tone: NoteTone.warn, text: l10n.phoneDndUnsupported),
+        // The gate couldn't attach its test window here, so input is unverified — not refused.
+        if (bg.injectUnverified) PhoneNote(tone: NoteTone.info, text: l10n.phoneDndProbeSkipped),
         // The experiment is offered where the platform can attempt it, and says what is missing.
         if (experiment) ...[
           ListPageCard(

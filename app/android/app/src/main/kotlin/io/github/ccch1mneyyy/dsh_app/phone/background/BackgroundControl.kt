@@ -126,6 +126,8 @@ class BackgroundControl private constructor(context: Context) {
                 mode, reason, AppStrings.get(app, R.string.background_root_legacy_client),
             ),
             "androidOk" to androidOk(),
+            // Gate ran but could not judge input here: the page says so, and nothing is refused.
+            "injectUnverified" to cached.injectUnverified,
             "trustedDisplay" to cached.trustedDisplayOk,
             "inject" to cached.injectOk,
             "shizuku" to shizukuStatus.map(),
@@ -462,6 +464,7 @@ class BackgroundControl private constructor(context: Context) {
             injectOk = if (response.containsKey(Proto.INJECT_OK)) response.getBoolean(Proto.INJECT_OK) else null,
             injectError = response.getString(Proto.INJECT_ERROR),
             detail = response.getString(Proto.ERROR_DETAIL),
+            injectUnverified = response.getBoolean(Proto.INJECT_UNVERIFIED),
         )
         if (!completed) return AppStrings.get(app, if (gate.current(owner))
             R.string.background_input_probe_busy else R.string.background_selection_cancelled)

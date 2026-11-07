@@ -56,6 +56,11 @@ object Proto {
     const val APP_PACKAGE = "io.github.ccch1mneyyy.dsh_app"
 
     const val INJECT_OK = "injectOk"
+    /**
+     * Gate only, INJECT_OK absent: the probe could not judge input here (the disposable receiver would
+     * not attach to an untrusted display). Unverified is not a failure and never blocks the attempt.
+     */
+    const val INJECT_UNVERIFIED = "injectUnverified"
     /** Gate only, with INJECT_OK false: the failing injection's [ERROR] code. Older cores omit it. */
     const val INJECT_ERROR = "injectError"
     /** With [ERROR] deviceUnavailable: the failing step's exception type, never its message. Older cores omit it. */
