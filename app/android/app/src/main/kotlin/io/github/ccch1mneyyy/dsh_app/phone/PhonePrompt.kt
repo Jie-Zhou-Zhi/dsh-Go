@@ -74,6 +74,22 @@ data class PromptContent(
     }
 }
 
+/**
+ * Which actions fit in the notification shade. It shows three at most: the refusal and the two
+ * waivers own those slots, so the extra "stop this task" is what gives way — dropping the
+ * single-tap approval instead left the shade offering only the terminal action, and a person
+ * who just wanted to approve had nothing to press. 「终止此次任务」 stays on the card.
+ */
+internal object NotificationActions {
+    const val MAX = 3
+
+    fun of(all: List<PromptChoice>): List<PromptChoice> {
+        if (all.size <= MAX) return all
+        val kept = all.filterNot { it == PromptChoice.STOP }
+        return if (kept.size <= MAX) kept else all.take(MAX)
+    }
+}
+
 data class PromptResult(val outcome: PromptOutcome, val presented: PromptSurface, val reason: String? = null) {
     fun toMap(): Map<String, Any?> = mapOf("decision" to outcome.wire, "presented" to presented.wire, "reason" to reason)
 }
