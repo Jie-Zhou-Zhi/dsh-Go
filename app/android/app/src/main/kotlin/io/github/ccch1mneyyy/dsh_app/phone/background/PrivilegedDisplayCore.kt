@@ -481,7 +481,10 @@ class PrivilegedDisplayCore(private val context: Context) {
         val vd = display ?: throw Fault("displayMissing")
         val conn = TreeConnection(context, pkg)
         try {
-            val automation = try { conn.open(vd.display) } catch (_: Throwable) { throw Fault("treeUnavailable") }
+            // A Fault already carries the real reason (e.g. treeNeedsAndroid14); only unexpected
+            // throwables become the generic "could not read the tree".
+            val automation = try { conn.open(vd.display) } catch (e: Fault) { throw e }
+                catch (_: Throwable) { throw Fault("treeUnavailable") }
             return readTree(automation, displayId, pkg)
         } finally { conn.close() }
     }
@@ -678,7 +681,8 @@ class PrivilegedDisplayCore(private val context: Context) {
         val vd = display ?: throw Fault("displayMissing")
         val conn = TreeConnection(context, pkg)
         try {
-            val automation = try { conn.open(vd.display) } catch (_: Throwable) { throw Fault("textConnectionUnavailable") }
+            val automation = try { conn.open(vd.display) } catch (e: Fault) { throw e }
+                catch (_: Throwable) { throw Fault("textConnectionUnavailable") }
             val node = readTree(automation, vd.display.displayId, pkg, index).target ?: throw Fault("elementMissing")
             try {
                 if (!node.refresh()) throw Fault("textTargetChanged")

@@ -28,6 +28,8 @@ class BackgroundDisplay(
     override val screen: PhoneScreen = PhoneScreen.BACKGROUND
 
     @Volatile private var currentPackage: String? = null
+    /** The engine's display id for this task, once a launch told us; -1 until then. */
+    @Volatile private var displayId: Int? = null
     private var counter = 0
     private var lastScreenId: String? = null
     private var lastElements: List<Element> = emptyList()
@@ -58,6 +60,7 @@ class BackgroundDisplay(
         }
         currentPackage = packageName
         val response = channel().execute(request)
+        displayId = response.getInt(Proto.DISPLAY_ID, -1).takeIf { it > 0 } ?: displayId
         // l10n:keep agent screen protocol
         return toResult(response, "已在后台屏打开")
     }
@@ -72,9 +75,22 @@ class BackgroundDisplay(
             putBoolean(Proto.WANT_IMAGE, image)
         }
         val response = channel().execute(request)
-        requireObservation(response.getBoolean(Proto.OK), response.getString(Proto.ERROR), response.getString(Proto.ERROR_DETAIL))
+        val code = response.getString(Proto.ERROR)
+        requireObservation(
+            response.getBoolean(Proto.OK), code,
+            // A failed tree read is where "can this Android version read at all" must be answered.
+            if (code != null && code in TREE_FAILURES) {
+                listOfNotNull(response.getString(Proto.ERROR_DETAIL), probe()).joinToString("; ").ifEmpty { null }
+            } else response.getString(Proto.ERROR_DETAIL),
+        )
         return snapshot(response, markNew = false)
     }
+
+    /** What the app's own accessibility service can see of the background display, or null. */
+    private fun probe(): String? = runCatching { A11yDisplayProbe.describe(displayId, currentPackage) }.getOrNull()
+
+    /** Failures that mean "the element tree could not be read", whatever the underlying cause. */
+    private val TREE_FAILURES = setOf("treeUnavailable", "treeNeedsAndroid14", "textConnectionUnavailable")
 
     /** A failed read is not an empty snapshot; old element numbers are no longer actionable. */
     internal fun requireObservation(ok: Boolean, code: String?, detail: String?) {

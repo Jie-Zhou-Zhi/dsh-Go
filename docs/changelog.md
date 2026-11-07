@@ -8,13 +8,13 @@
 
 - 修复手机操控确认卡的按钮点不动：判定真实触摸不再依赖系统上报的设备号（部分机型在悬浮窗上会把手指的 deviceId 报成 0 或 -1），改看触摸事件的工具类型；真实手指、触控笔、鼠标都能按，只有无障碍注入的笔迹仍被拒绝。
 - 确认请求现在有第二种授权方式：同一条请求除了屏幕上的确认卡，也会出现在通知栏，按钮相同；哪边先回答就按哪边算，另一边自动消失。卡片点不动或正在用全屏应用时，下拉通知栏即可授权。
-- 不打扰模式：按系统版本分开报告能力（建屏、启动应用、注入输入、读界面元素），错误信息会写明缺的是哪一项，不再笼统报「不支持」。Android 13 上新增一个默认关闭的尝试开关：允许后可以选通道，但独立焦点和读元素这两项系统没有，可能起不来 App、读不到界面文字；关掉开关会同时关闭当前通道。系统不允许在后台屏上挂测试窗口时，输入自检记为「未验证」而不是失败，任务直接尝试；是否真的可用仍待真机验证。
+- 不打扰模式：按系统版本分开报告能力（建屏、启动应用、注入输入、读界面元素），错误信息会写明缺的是哪一项，不再笼统报「不支持」。Android 13 上新增一个默认关闭的尝试开关：允许后可以选通道，但独立焦点和读元素这两项系统没有，可能起不来 App、读不到界面文字；关掉开关会同时关闭当前通道。系统不允许在后台屏上挂测试窗口时，输入自检记为「未验证」而不是失败，任务直接尝试；读取元素失败时不再把原因一律改写成「未能读取控件树」，并会附上 App 侧无障碍服务能看到的后台屏窗口数量，便于判断这台机器能不能读元素。是否真的可用仍待真机验证。
 
 ### English
 
 - Fixed unresponsive confirm-card buttons: a real touch is no longer judged by the device id the system reports (some devices report 0 or -1 for a finger that lands on an overlay window). The event's tool type decides instead, so fingers, stylus and mouse work while injected accessibility strokes are still refused.
 - Confirmation requests now have a second way to be answered: the same request appears on the confirmation card and in the notification shade, with the same buttons. Whichever is answered first wins and the other disappears, so a card that cannot be tapped no longer blocks the task.
-- Non-disruptive mode now reports its capabilities per part (display, launch, inject, element tree) and names the missing one instead of saying "unsupported". Android 13 gets an attempt switch, off by default: with it on you can pick a channel, but the system has no own-focus display and no element tree, so apps may refuse to start and their text may be unreadable; turning it off also closes the current channel. When the system refuses to attach the probe window to the background screen, the input self-test is recorded as unverified rather than failed and the task tries directly. Whether it actually works is still to be verified on a device.
+- Non-disruptive mode now reports its capabilities per part (display, launch, inject, element tree) and names the missing one instead of saying "unsupported". Android 13 gets an attempt switch, off by default: with it on you can pick a channel, but the system has no own-focus display and no element tree, so apps may refuse to start and their text may be unreadable; turning it off also closes the current channel. When the system refuses to attach the probe window to the background screen, the input self-test is recorded as unverified rather than failed and the task tries directly. A failed element read no longer has its reason rewritten to "could not read the tree" and now carries how many background-display windows the app's own accessibility service can see, which is what decides whether this phone can read elements at all. Whether it actually works is still to be verified on a device.
 
 ## 1.0.11 · 2026-11-05
 
