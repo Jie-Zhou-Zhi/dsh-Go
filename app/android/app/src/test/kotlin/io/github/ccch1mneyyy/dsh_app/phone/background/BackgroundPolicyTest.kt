@@ -65,4 +65,13 @@ class BackgroundPolicyTest {
         assertFalse(BackgroundPolicy.probeCanJudge(33))
         assertFalse(BackgroundPolicy.probeCanJudge(32))
     }
+
+    @Test fun below14TheKeyboardIsKeptOnTheBackgroundDisplay() {
+        // HIDE on a display without its own focus sends the app to the default display for its IME.
+        assertEquals(BackgroundPolicy.IME_POLICY_LOCAL, BackgroundPolicy.imePolicy(33))
+        assertEquals(BackgroundPolicy.IME_POLICY_LOCAL, BackgroundPolicy.imePolicy(32))
+        assertEquals(BackgroundPolicy.IME_POLICY_HIDE, BackgroundPolicy.imePolicy(34))
+        assertEquals(0, BackgroundPolicy.IME_POLICY_LOCAL)
+        assertEquals(2, BackgroundPolicy.IME_POLICY_HIDE)
+    }
 }

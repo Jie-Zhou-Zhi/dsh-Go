@@ -47,6 +47,21 @@ object BackgroundPolicy {
     fun supported(sdk: Int): Boolean = profile(sdk).supported
 
     /**
+     * Which display IME policy to set on the background display (the @hide WindowManager values):
+     * LOCAL(0) lets the keyboard live on that display, FALLBACK_DISPLAY(1) hands focus back to the
+     * default display, HIDE(2) refuses a keyboard there at all.
+     *
+     * Below 14 the display has no focus of its own: with HIDE, an app that asks for a keyboard has
+     * nowhere to show it but the default display, and the system moves the task there — which is
+     * exactly what a person sees as "the app jumped to my screen". LOCAL is what keeps it local.
+     */
+    const val IME_POLICY_LOCAL = 0
+    const val IME_POLICY_FALLBACK_DISPLAY = 1
+    const val IME_POLICY_HIDE = 2
+
+    fun imePolicy(sdk: Int): Int = if (supported(sdk)) IME_POLICY_HIDE else IME_POLICY_LOCAL
+
+    /**
      * Whether the gate's receiver can give a real verdict here. Below 14 a window is often refused on
      * a display the system does not trust, so a failed probe is unverified rather than a denial.
      */

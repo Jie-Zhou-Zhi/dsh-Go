@@ -264,8 +264,8 @@ class PrivilegedDisplayCore(private val context: Context) {
                 flags or if (probe) DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION else 0)
             if (vd.display.displayId <= Display.DEFAULT_DISPLAY) { vd.release(); throw Fault("displayUnsupported") }
             width = w; height = h; reader = ir; display = vd
-            // Keep the virtual display's keyboard off the main screen: IME policy HIDE.
-            runCatching { setImePolicyHide(vd.display.displayId) }
+            // Below 14 the keyboard has to live on this display; on 14+ it stays off it.
+            runCatching { setDisplayImePolicy(vd.display.displayId, BackgroundPolicy.imePolicy(Build.VERSION.SDK_INT)) }
         } catch (e: Throwable) { ir.close(); if (e is Fault) throw e else throw Fault("displayUnsupported") }
     }
 
@@ -286,6 +286,8 @@ class PrivilegedDisplayCore(private val context: Context) {
         } catch (_: SecurityException) { throw Fault("launchDenied") }
         catch (_: PendingIntent.CanceledException) { throw Fault("launchCancelled") }
         finally { pending?.let { runCatching { it.cancel() } } }
+        // The app may have asked for its own policy while starting; say it again once it is up.
+        runCatching { setDisplayImePolicy(display.displayId, BackgroundPolicy.imePolicy(Build.VERSION.SDK_INT)) }
         // Poll for the target becoming foreground on the owned display.
         val deadline = SystemClock.uptimeMillis() + 4000
         while (true) {
@@ -782,14 +784,14 @@ class PrivilegedDisplayCore(private val context: Context) {
         if (waitForFinish && !accepted) throw Fault("inputRejected")
     }
 
-    private fun setImePolicyHide(displayId: Int) {
+    private fun setDisplayImePolicy(displayId: Int, policy: Int) {
         val sm = Class.forName("android.os.ServiceManager")
         val binder = sm.getMethod("getService", String::class.java).invoke(null, "window") as IBinder
         val wm = Class.forName("android.view.IWindowManager\$Stub")
             .getMethod("asInterface", IBinder::class.java).invoke(null, binder)
-        // DISPLAY_IME_POLICY_HIDE == 2
+        // @hide WindowManager.DISPLAY_IME_POLICY_*: 0 local, 1 fallback display, 2 hide.
         wm.javaClass.getMethod("setDisplayImePolicy", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
-            .invoke(wm, displayId, 2)
+            .invoke(wm, displayId, policy)
     }
 
     /**
