@@ -79,7 +79,13 @@ internal object BackgroundA11y {
             })
         }.getOrDefault(false)
         if (!set) return false
-        if (submit) runCatching { node.performAction(AccessibilityNodeInfo.ACTION_PRESS_ENTER) }
+        if (submit) {
+            // The IME's own enter action; absent on editors that do not offer it.
+            val enter = AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id
+            if (runCatching { node.actionList.any { it.id == enter } }.getOrDefault(false)) {
+                runCatching { node.performAction(enter) }
+            }
+        }
         return true
     }
 
