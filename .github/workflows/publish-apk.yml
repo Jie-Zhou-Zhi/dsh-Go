@@ -1,0 +1,59 @@
+name: publish-apk
+
+# 把 build-apk 的产物搬到一个 Release，得到可直接下载的公开链接：
+#   https://github.com/<owner>/<repo>/releases/download/<tag>/app-arm64-release.apk
+on:
+  # 本机 POST 常被 TLS 拦截、workflow_dispatch 用不了，推 tag 也能发布。
+  push:
+    tags: ["v*-local", "v*-test", "test-*"]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "build-apk 那次运行的 run id"
+        required: true
+      tag:
+        description: "Release 标签"
+        required: true
+        default: "local-build"
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: 解析 run id（推 tag 触发时取本分支最近一次成功构建）
+        id: r
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          run_id="${{ inputs.run_id }}"
+          if [ -z "$run_id" ]; then
+            run_id="$(gh run list --repo "${{ github.repository }}" --workflow build-apk.yml --commit "$GITHUB_SHA" --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+          fi
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "build run: $run_id"
+
+      - name: 取出构建产物
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh run download "${{ steps.r.outputs.run_id }}" --repo "${{ github.repository }}" --name dsh-go-arm64-apk --dir out
+          find out -type f | head -20
+          du -sh out
+
+      - name: 建立 Release 并上传 APK
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ inputs.tag }}"
+          [ -n "$tag" ] || tag="${GITHUB_REF_NAME}"
+          gh release view "$tag" --repo "${{ github.repository }}" > /dev/null 2>&1 || \
+            gh release create "$tag" --repo "${{ github.repository }}" \
+              --title "本地构建 $tag" \
+              --notes "换包名（io.github.ccch1mneyyy.dshgo.local）的 arm64 测试包，debug 签名，含 Linux 运行时。"
+          find out -name '*.apk' -print0 | xargs -0 -I{} gh release upload "$tag" "{}" --repo "${{ github.repository }}" --clobber
+          echo "下载地址: ${{ github.server_url }}/${{ github.repository }}/releases/download/$tag/app-arm64-release.apk"
