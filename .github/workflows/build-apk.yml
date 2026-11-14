@@ -49,7 +49,10 @@ jobs:
       # runtime/out 与 Gradle 都需要空间；runner 自带的一堆 SDK 用不上。
       - name: 腾出磁盘
         run: |
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android/sdk/ndk/* || true
+          sudo rm -rf /usr/share/dotnet /opt/ghc || true
+          # tawcroot 的构建脚本直接读 NDK 里的 source.properties，NDK 不能整个删；
+          # 只清掉用不到的 NDK 版本，省空间。
+          sudo find /usr/local/lib/android/sdk/ndk -maxdepth 1 -mindepth 1 -type d             ! -name 27.3.13750724 -exec rm -rf {} + 2>/dev/null || true
           df -h /
 
       - name: 宿主依赖
@@ -111,6 +114,12 @@ jobs:
           flutter config --no-analytics --android-sdk "$SDK"
           # platform / build-tools / ndk 交给 AGP 按 Flutter 的 compileSdk 自动装（许可已接受）。
           "$SM" --install "platform-tools" | tail -2 || true
+          # tawcroot 用到 NDK，版本跟随 Flutter 的 flutter.ndkVersion。
+          NDK=27.3.13750724
+          if [ ! -f "$SDK/ndk/$NDK/source.properties" ]; then
+            yes | "$SM" --install "ndk;$NDK" > /dev/null || true
+          fi
+          ls "$SDK/ndk/$NDK/source.properties"
           flutter doctor -v | head -30 || true
 
       # 下载缓存（Ubuntu base、Node、DSH npm 树）：命中时省几分钟，不命中也能跑。
