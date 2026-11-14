@@ -56,7 +56,6 @@ jobs:
           echo "tawcroot NDK: $NDK"
           sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL || true
           sudo rm -rf /usr/local/lib/android/sdk/system-images /usr/local/lib/android/sdk/emulator || true
-          sudo find /usr/local/lib/android/sdk/ndk -maxdepth 1 -mindepth 1 -type d ! -name "$NDK" -exec rm -rf {} + 2>/dev/null || true
           df -h /
 
       - name: 宿主依赖
@@ -120,9 +119,14 @@ jobs:
           "$SM" --install "platform-tools" | tail -2 || true
           # tawcroot 要的 NDK 版本由 runtime/tawcroot/source.json 钉住，缺了就装。
           if [ ! -f "$SDK/ndk/$TAWCROOT_NDK/source.properties" ]; then
-            yes | "$SM" --install "ndk;$TAWCROOT_NDK" > /dev/null
+            echo "installing NDK $TAWCROOT_NDK"
+            "$SM" --install "ndk;$TAWCROOT_NDK" </dev/null | tail -3
           fi
-          grep -q "Pkg.Revision=$TAWCROOT_NDK" "$SDK/ndk/$TAWCROOT_NDK/source.properties"
+          if ! grep -q "Pkg.Revision=$TAWCROOT_NDK" "$SDK/ndk/$TAWCROOT_NDK/source.properties"; then
+            echo "no usable NDK $TAWCROOT_NDK under $SDK/ndk:" >&2
+            ls "$SDK/ndk" >&2 || true
+            exit 1
+          fi
           flutter doctor -v | head -30 || true
 
       # 下载缓存（Ubuntu base、Node、DSH npm 树）：命中时省几分钟，不命中也能跑。
