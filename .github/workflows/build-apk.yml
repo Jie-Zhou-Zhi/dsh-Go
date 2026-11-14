@@ -110,6 +110,9 @@ jobs:
           SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          # runner 镜像自带 ANDROID_NDK_HOME，指向的版本不是 tawcroot 要的那个；
+          # tawcroot 优先读它，所以显式指到 tawcroot/source.json 钉的 NDK。
+          echo "ANDROID_NDK_HOME=$SDK/ndk/$TAWCROOT_NDK" >> "$GITHUB_ENV"
           SM="$SDK/cmdline-tools/latest/bin/sdkmanager"
           [ -x "$SM" ] || SM="$(find "$SDK/cmdline-tools" -name sdkmanager -type f | head -1)"
           echo "sdkmanager: $SM"
