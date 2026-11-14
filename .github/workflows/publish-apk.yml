@@ -54,6 +54,6 @@ jobs:
           gh release view "$tag" --repo "${{ github.repository }}" > /dev/null 2>&1 || \
             gh release create "$tag" --repo "${{ github.repository }}" \
               --title "本地构建 $tag" \
-              --notes "换包名（io.github.ccch1mneyyy.dshgo.local）的 arm64 测试包，debug 签名，含 Linux 运行时。"
+              --notes "dsh-go arm64 本地构建（分支 $GITHUB_REF_NAME）：含 Linux 运行时与 tawcroot 原生库，release 正式密钥签名，安装包名 io.github.ccch1mneyyy.dshgo.local，可与官方包并存。"
           find out -name '*.apk' -print0 | xargs -0 -I{} gh release upload "$tag" "{}" --repo "${{ github.repository }}" --clobber
           echo "下载地址: ${{ github.server_url }}/${{ github.repository }}/releases/download/$tag/app-arm64-release.apk"
