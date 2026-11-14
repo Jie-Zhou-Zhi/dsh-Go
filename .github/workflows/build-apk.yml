@@ -122,7 +122,8 @@ jobs:
             echo "installing NDK $TAWCROOT_NDK"
             "$SM" --install "ndk;$TAWCROOT_NDK" </dev/null | tail -3
           fi
-          if ! grep -q "Pkg.Revision=$TAWCROOT_NDK" "$SDK/ndk/$TAWCROOT_NDK/source.properties"; then
+          # source.properties 里是 `Pkg.Revision = 28.2.13676358`，等号两边可能有空格。
+          if ! grep -qE "Pkg\.Revision[[:space:]]*=[[:space:]]*$TAWCROOT_NDK" "$SDK/ndk/$TAWCROOT_NDK/source.properties"; then
             echo "no usable NDK $TAWCROOT_NDK under $SDK/ndk:" >&2
             ls "$SDK/ndk" >&2 || true
             exit 1
