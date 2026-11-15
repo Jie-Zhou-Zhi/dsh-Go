@@ -2,8 +2,9 @@
 // the drawer, and opening the startup mode on launch.
 //
 // 工作 is the home. 伙伴 and 酒馆 are full pages pushed over it, one at a
-// time: switching pops back to the home first, so back from a mode always
-// lands in 工作.
+// time: back from a mode always lands in 工作. Switching straight from one mode
+// to the other hands the page being left to the wave as its picture (the old one
+// leaves only once the new one has settled), so 工作 never flashes through.
 
 import 'dart:async';
 
@@ -31,30 +32,60 @@ Widget appModePage(AppMode mode) => switch (mode) {
 
 const _modeRoutePrefix = 'mode:';
 
-/// Shows [mode]: back to the home, then that mode's page carried in over it on a
-/// soft wave of the theme's colour (Libraries.dev Distortion waves).
+/// The mode page over 工作 right now, if any.
+Route<void>? _modeRoute;
+
+/// Shows [mode]: that mode's page carried in over whatever is showing on a soft wave
+/// of the theme's colour (Libraries.dev Distortion waves).
 void openAppMode(BuildContext context, AppMode mode) {
   final navigator = Navigator.of(context);
-  final closing = navigator.canPop();
-  navigator.popUntil((route) => route.isFirst);
-  if (mode == AppMode.work) return;
-  // The wave pictures the page under it as it starts: let the sheet and any page leave first.
-  final settle = closing ? AppMotion.of(context, AppMotion.emphasized) : Duration.zero;
+  final leaving = _modeRoute;
+  if (mode == AppMode.work) {
+    navigator.popUntil((route) => route.isFirst);
+    return;
+  }
+  // The wave pictures the page under it as it starts: let the sheet leave first.
+  final settle = navigator.canPop() ? AppMotion.of(context, AppMotion.emphasized) : Duration.zero;
   unawaited(
     Future<void>.delayed(settle, () {
       if (!navigator.mounted) return;
-      unawaited(
-        navigator.push(
-          DistortionWaveRoute<void>(
-            settings: RouteSettings(name: '$_modeRoutePrefix${mode.name}'),
-            // Quieter colour fringes than the author's 0.78: the words behind the front stay legible.
-            style: DistortionWaveStyle.vertical.copyWith(aberration: 0.35),
-            builder: (_) => appModePage(mode),
-          ),
-        ),
+      final route = DistortionWaveRoute<void>(
+        settings: RouteSettings(name: '$_modeRoutePrefix${mode.name}'),
+        // Quieter colour fringes than the author's 0.78: the words behind the front stay legible.
+        style: DistortionWaveStyle.vertical.copyWith(aberration: 0.35),
+        builder: (_) => appModePage(mode),
       );
+      _openModePage(navigator, route);
+      // 换模式：旧页等新的落位以后再摘。波纹画的底图就是它，先摘会露出工作首页。
+      if (leaving != null) _dropWhenSettled(navigator, route, leaving);
     }),
   );
+}
+
+/// Pushes [route] as the mode page over 工作, and forgets it once it is popped.
+void _openModePage(NavigatorState navigator, Route<void> route) {
+  _modeRoute = route;
+  unawaited(
+    navigator.push(route).then((_) {
+      if (identical(_modeRoute, route)) _modeRoute = null;
+    }),
+  );
+}
+
+/// Removes [leaving] once [incoming] has finished coming in.
+void _dropWhenSettled(NavigatorState navigator, PageRoute<void> incoming, Route<void> leaving) {
+  final animation = incoming.animation;
+  if (animation == null) {
+    if (navigator.mounted) navigator.removeRoute(leaving);
+    return;
+  }
+  void onStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed) return;
+    animation.removeStatusListener(onStatus);
+    if (navigator.mounted) navigator.removeRoute(leaving);
+  }
+
+  animation.addStatusListener(onStatus);
 }
 
 String appModeLabel(L10n l10n, AppMode mode) => switch (mode) {
@@ -200,12 +231,11 @@ class _ModeLaunchState extends ConsumerState<ModeLaunch> {
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || ref.read(modeLaunchedProvider)) return;
-      unawaited(
-        Navigator.of(context).push(
-          _InstantRoute<void>(
-            settings: RouteSettings(name: '$_modeRoutePrefix${mode.startup.name}'),
-            builder: (_) => appModePage(mode.startup),
-          ),
+      _openModePage(
+        Navigator.of(context),
+        _InstantRoute<void>(
+          settings: RouteSettings(name: '$_modeRoutePrefix${mode.startup.name}'),
+          builder: (_) => appModePage(mode.startup),
         ),
       );
       ref.read(modeLaunchedProvider.notifier).mark();
