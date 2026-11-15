@@ -24,6 +24,14 @@ val runtimeOut = rootProject.file("../../runtime/out")
 // libtawcroot.so for the opt-in tawcroot launch method (runtime/tawcroot/build.py; missing = unavailable).
 val tawcrootOut = rootProject.file("../../runtime/out-tawcroot")
 
+// The package name this build installs as. A local build can pick another one so it sits beside
+// the official app instead of replacing it (which would delete its data):
+//   -PdshAppId=com.example.dshgo     (or dshAppId=… in android/gradle.properties)
+// The Kotlin namespace and the source tree stay put.
+val officialAppId = "io.github.ccch1mneyyy.dsh_app"
+val dshAppId = (findProperty("dshAppId") as String?)?.trim()?.takeIf { it.isNotEmpty() } ?: officialAppId
+if (dshAppId != officialAppId) logger.lifecycle("dsh-go: this build installs as $dshAppId (official package: $officialAppId)")
+
 // versionCode is the build minute, same encoding as tooling/build_number.py:
 // (year - 2026) * 10^8 + MMDDhhmm at UTC+8. tooling/build-apk.sh passes it as
 // --build-number; this covers builds that skip the script (flutter run, the
@@ -49,7 +57,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "io.github.ccch1mneyyy.dsh_app"
+        applicationId = dshAppId
         // java.nio.file (symlinks while unpacking the rootfs) needs API 26.
         minSdk = 26
         // Target 28 like Termux, so the API 29+ exec restriction on app-private
